@@ -1,0 +1,39 @@
+RewriteEngine On
+
+# ==================== CORS CONFIGURATION ====================
+# Enable CORS for all domains (sementara untuk testing)
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+Header always set Access-Control-Allow-Credentials "true"
+Header always set Access-Control-Expose-Headers "Authorization"
+
+# Handle preflight OPTIONS requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# ==================== SECURITY ====================
+# Izinkan akses ke file PHP
+<FilesMatch "\.php$">
+    Require all granted
+</FilesMatch>
+
+# Cegah akses ke file sensitif
+<Files "\.(env|config|log)$">
+    Require all denied
+</Files>
+
+<Files "config.php">
+    Require all denied
+</Files>
+
+# ==================== PHP CONFIG ====================
+php_value error_log /home/nurdiansyah/appKoperasi/public_html/api/error_log
+php_flag log_errors on
+php_value error_reporting E_ALL
+
+# ==================== REWRITE RULES ====================
+# Jika perlu rewrite untuk SPA
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.html [L,QSA]
