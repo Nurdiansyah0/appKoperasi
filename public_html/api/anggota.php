@@ -244,59 +244,101 @@ class Anggota
         }
     }
 
-    public static function getHistoriTransaksi($conn)
-    {
-        $user = getAuthUser(self::$jwt_secret);
-        self::requireRoleAnggota($user);
+public static function getHistoriTransaksi($conn)
+{
+    $user = getAuthUser(self::$jwt_secret);
+    self::requireRoleAnggota($user);
 
-        $anggota_id = self::resolveAnggotaId($conn, $user);
-        if (!$anggota_id) {
-            sendResponse(false, "Profil anggota tidak ditemukan");
-            return;
-        }
-
-        $stmt = $conn->prepare("
-            SELECT t.transaksi_id,t.anggota_id,t.kasir_id,t.total_harga,t.total_keuntungan,
-                   t.metode_pembayaran,t.status,t.created_at,u.username nama_anggota,uk.username nama_kasir
-            FROM transaksi t
-            LEFT JOIN users u ON u.user_id = t.anggota_id
-            LEFT JOIN users uk ON uk.user_id = t.kasir_id
-            WHERE t.anggota_id = ?
-            ORDER BY t.created_at DESC
-        ");
-        if (!$stmt) {
-            sendResponse(false, "Prepare query gagal");
-            return;
-        }
-
-        $stmt->bind_param("i", $anggota_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $list = [];
-        while ($row = $res->fetch_assoc()) {
-            $stmtD = $conn->prepare("
-                SELECT td.barang_id, td.jumlah, td.harga_satuan, b.nama_barang
-                FROM transaksi_detail td
-                JOIN barang b ON b.barang_id = td.barang_id
-                WHERE td.transaksi_id = ?
-            ");
-            if ($stmtD) {
-                $stmtD->bind_param("i", $row['transaksi_id']);
-                $stmtD->execute();
-                $resD = $stmtD->get_result();
-                $items = [];
-                while ($d = $resD->fetch_assoc()) $items[] = $d;
-                $stmtD->close();
-            } else {
-                $items = [];
-            }
-            $row['items'] = $items;
-            $list[] = $row;
-        }
-        $stmt->close();
-        sendResponse(true, ["data" => $list]);
+    $anggota_id = self::resolveAnggotaId($conn, $user);
+    if (!$anggota_id) {
+        sendResponse(false, "Profil anggota tidak ditemukan");
+        return;
     }
 
+    // Query utama untuk ambil transaksi
+    $stmt = $conn->prepare("
+        SELECT 
+            t.transaksi_id,
+            t.anggota_id,
+            t.kasir_id,
+            t.total_harga,
+            t.total_keuntungan,
+            t.metode_pembayaran,
+            t.status,
+            t.created_at,
+            u.username as nama_anggota,
+            uk.username as nama_kasir
+        FROM transaksi t
+        LEFT JOIN users u ON u.user_id = t.anggota_id
+        LEFT JOIN users uk ON uk.user_id = t.kasir_id
+        WHERE t.anggota_id = ?
+        ORDER BY t.created_at DESC
+    ");
+    
+    if (!$stmt) {
+        error_log("❌ Prepare query utama gagal: " . $conn->error);
+        sendResponse(false, "Prepare query gagal: " . $conn->error);
+        return;
+    }
+
+    $stmt->bind_param("i", $anggota_id);
+    
+    if (!$stmt->execute()) {
+        error_log("❌ Execute query utama gagal: " . $stmt->error);
+        sendResponse(false, "Execute query gagal: " . $stmt->error);
+        $stmt->close();
+        return;
+    }
+
+    $res = $stmt->get_result();
+    $list = [];
+    
+    while ($row = $res->fetch_assoc()) {
+        // PERBAIKAN: Query detail TANPA GROUP BY
+        $stmtD = $conn->prepare("
+            SELECT 
+                td.barang_id,
+                td.jumlah,                    -- ✅ Ambil langsung tanpa SUM
+                td.harga_satuan,
+                td.subtotal,
+                td.keuntungan,
+                b.nama_barang
+            FROM transaksi_detail td
+            JOIN barang b ON b.barang_id = td.barang_id
+            WHERE td.transaksi_id = ?
+            ORDER BY td.detail_id              -- ✅ Urutkan berdasarkan detail_id
+        ");
+        
+        if ($stmtD) {
+            $stmtD->bind_param("i", $row['transaksi_id']);
+            
+            if ($stmtD->execute()) {
+                $resD = $stmtD->get_result();
+                $items = [];
+                while ($d = $resD->fetch_assoc()) {
+                    $items[] = $d;
+                }
+                $row['items'] = $items;
+                $stmtD->close();
+            } else {
+                error_log("❌ Execute query detail gagal untuk transaksi_id {$row['transaksi_id']}: " . $stmtD->error);
+                $row['items'] = [];
+            }
+        } else {
+            error_log("❌ Prepare query detail gagal untuk transaksi_id {$row['transaksi_id']}: " . $conn->error);
+            $row['items'] = [];
+        }
+        
+        $list[] = $row;
+    }
+    
+    $stmt->close();
+    
+    // Log untuk debugging
+    error_log("✅ Berhasil mengambil " . count($list) . " transaksi untuk anggota_id: " . $anggota_id);
+    
+    sendResponse(true, ["data" => $list]);
+}
     public static function bayarHutang($conn)
     {
         ini_set('display_errors', 0);

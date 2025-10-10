@@ -910,32 +910,108 @@ class kasir
         error_log("Found " . count($list) . " transactions");
         sendResponse(true, ["data" => $list]);
     }
+// Di class Kasir, perbaiki fungsi createSerahTerima
+public static function createSerahTerima($conn)
+{
+    $user = getAuthUser(self::$jwt_secret);
+    $input = getJsonInput();
+    
+    $kasir_to = $input['kasir_to'] ?? null;
+    $hasil_opname = $input['hasil_opname'] ?? null;
+
+    if (!$kasir_to || !$hasil_opname) {
+        sendResponse(false, "Data tidak lengkap");
+        return;
+    }
+
+    // Validasi kasir_to berbeda dengan current user
+    $current_user_id = $user['user_id'];
+    if ($kasir_to == $current_user_id) {
+        sendResponse(false, "Tidak bisa melakukan serah terima ke diri sendiri");
+        return;
+    }
+
+    // Validasi kasir_to exists dan role kasir
+    $checkKasir = "SELECT user_id FROM users WHERE user_id = ? AND role = 'kasir'";
+    $stmtCheck = $conn->prepare($checkKasir);
+    if (!$stmtCheck) {
+        sendResponse(false, "Prepare check kasir failed: " . $conn->error);
+        return;
+    }
+    
+    $stmtCheck->bind_param("i", $kasir_to);
+    
+    if (!$stmtCheck->execute()) {
+        sendResponse(false, "Execute check kasir failed: " . $stmtCheck->error);
+        $stmtCheck->close();
+        return;
+    }
+    
+    $result = $stmtCheck->get_result();
+    
+    if ($result->num_rows === 0) {
+        sendResponse(false, "Kasir penerima tidak ditemukan atau tidak memiliki role kasir");
+        $stmtCheck->close();
+        return;
+    }
+    $stmtCheck->close();
+
+    // Encode hasil_opname ke JSON
+    $hasil_opname_json = json_encode($hasil_opname);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        sendResponse(false, "Error encoding JSON: " . json_last_error_msg());
+        return;
+    }
+
+    $sql = "INSERT INTO serah_terima_kasir 
+            (kasir_from, kasir_to, hasil_opname, status, created_at) 
+            VALUES (?, ?, ?, 'pending', NOW())";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        sendResponse(false, "Prepare failed: " . $conn->error);
+        return;
+    }
+
+    $stmt->bind_param("iis", $current_user_id, $kasir_to, $hasil_opname_json);
+
+    if ($stmt->execute()) {
+        $insert_id = $stmt->insert_id;
+        sendResponse(true, "Serah terima berhasil dibuat", ["serah_id" => $insert_id]);
+    } else {
+        sendResponse(false, "Execute failed: " . $stmt->error);
+    }
+    $stmt->close();
+}
 
     // Serah Terima
-    public static function getSerahTerimaForMe($conn)
-    {
-        $user = getAuthUser(self::$jwt_secret);
-        $current_user_id = $user['user_id'];
+public static function getSerahTerimaForMe($conn)
+{
+    $user = getAuthUser(self::$jwt_secret);
+    $current_user_id = $user['user_id'];
+    
+    error_log("🔄 getSerahTerimaForMe - User ID: " . $current_user_id);
 
-        // PERBAIKAN: Gunakan nama tabel yang benar - serah_terima_kasir
-        $sql = "SELECT st.*, u.username as kasir_from_name 
-            FROM serah_terima_kasir st 
-            JOIN users u ON st.kasir_from = u.user_id 
-            WHERE st.kasir_to = ? 
-            ORDER BY st.created_at DESC";
+    try {
+        $sql = "SELECT st.*, 
+                       u_from.username as kasir_from_username,
+                       u_from.username as kasir_from_name,
+                       u_to.username as kasir_to_username
+                FROM serah_terima_kasir st 
+                JOIN users u_from ON st.kasir_from = u_from.user_id 
+                JOIN users u_to ON st.kasir_to = u_to.user_id 
+                WHERE st.kasir_to = ? 
+                ORDER BY st.created_at DESC";
 
         $stmt = $conn->prepare($sql);
         if (!$stmt) {
-            sendResponse(false, "Query gagal: " . $conn->error);
-            return;
+            throw new Exception("Query gagal: " . $conn->error);
         }
 
         $stmt->bind_param("i", $current_user_id);
 
         if (!$stmt->execute()) {
-            sendResponse(false, "Execute gagal: " . $stmt->error);
-            $stmt->close();
-            return;
+            throw new Exception("Execute gagal: " . $stmt->error);
         }
 
         $res = $stmt->get_result();
@@ -944,19 +1020,64 @@ class kasir
         while ($row = $res->fetch_assoc()) {
             // Decode hasil_opname dari JSON
             if (isset($row['hasil_opname']) && !empty($row['hasil_opname'])) {
-                $row['hasil_opname'] = json_decode($row['hasil_opname'], true);
-                $row['summary'] = $row['hasil_opname']['summary'] ?? [];
-                $row['items'] = $row['hasil_opname']['items'] ?? [];
-            } else {
-                $row['summary'] = [];
-                $row['items'] = [];
+                $decoded = json_decode($row['hasil_opname'], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $row['hasil_opname'] = $decoded;
+                    $row['summary'] = $decoded['summary'] ?? [];
+                    $row['items'] = $decoded['items'] ?? [];
+                }
             }
             $serahTerimaList[] = $row;
         }
+        
         $stmt->close();
 
-        sendResponse(true, ["data" => $serahTerimaList]);
+        error_log("✅ Data ditemukan: " . count($serahTerimaList) . " records");
+        
+        // PERBAIKAN: Debug lebih detail dan pastikan data dikirim
+        error_log("🔍 Data content: " . json_encode($serahTerimaList));
+        
+        // Coba response manual dulu
+        if (count($serahTerimaList) > 0) {
+            $response = [
+                "success" => true,
+                "message" => "Data berhasil diambil",
+                "data" => $serahTerimaList,
+                "debug_count" => count($serahTerimaList),
+                "debug_user" => $current_user_id
+            ];
+        } else {
+            $response = [
+                "success" => true,
+                "message" => "Tidak ada data serah terima",
+                "data" => [],
+                "debug_count" => 0,
+                "debug_user" => $current_user_id
+            ];
+        }
+        
+        error_log("📤 Sending response: " . json_encode($response));
+        
+        // Kirim response manual
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
+        
+    } catch (Exception $e) {
+        error_log("❌ Error in getSerahTerimaForMe: " . $e->getMessage());
+        
+        $response = [
+            "success" => false,
+            "error" => "Terjadi kesalahan sistem: " . $e->getMessage(),
+            "debug_user" => $current_user_id
+        ];
+        
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
     }
+}
+
     // Approve Serah Terima
     public static function approveSerahTerima($conn)
     {

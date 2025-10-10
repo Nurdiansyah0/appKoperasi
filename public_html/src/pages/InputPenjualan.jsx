@@ -1,4 +1,4 @@
-// src/pages/kasir/InputPenjualan.jsx - UI/UX IMPROVED
+// src/pages/kasir/InputPenjualan.jsx - UI/UX IMPROVED DENGAN PENCARIAN OTOMATIS
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "../utils/api";
 import { useNavigate } from "react-router-dom";
@@ -26,12 +26,14 @@ const normalizeAnggota = (a) => ({
 
 export default function InputPenjualan() {
   const navigate = useNavigate();
-  const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [allAnggota, setAllAnggota] = useState([]);
+  const [displayedProducts, setDisplayedProducts] = useState([]);
+  const [displayedAnggota, setDisplayedAnggota] = useState([]);
   const [query, setQuery] = useState("");
   const [queryAnggota, setQueryAnggota] = useState("");
   const [cart, setCart] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingAnggota, setLoadingAnggota] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -46,35 +48,52 @@ export default function InputPenjualan() {
   const dropdownRef = useRef(null);
   const metodeDropdownRef = useRef(null);
 
-  // Handler untuk mencari produk
-  const searchProducts = async () => {
-    if (!query.trim()) {
-      setProducts([]);
-      return;
+  // Fungsi untuk memfilter produk berdasarkan query
+  const filterProducts = useCallback((products, searchQuery) => {
+    if (!searchQuery.trim()) {
+      return products.slice(0, 3); // Tampilkan 3 produk pertama jika tidak ada query
     }
 
-    setLoading(true);
-    setError(null);
+    const filtered = products.filter(
+      (p) =>
+        (p.nama_item || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(p.id || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
+    return filtered; // Tampilkan semua hasil yang match
+  }, []);
+
+  // Fungsi untuk memfilter anggota berdasarkan query
+  const filterAnggota = useCallback((anggota, searchQuery) => {
+    if (!searchQuery.trim()) {
+      return []; // Sembunyikan daftar anggota jika tidak ada query
+    }
+
+    const filtered = anggota.filter(
+      (a) =>
+        (a.nama_lengkap || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (a.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(a.anggota_id || "").includes(searchQuery)
+    );
+
+    return filtered;
+  }, []);
+
+  // Load semua produk saat komponen mount
+  const loadAllProducts = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       const resProduk = await api("getDataBarangBelanjaKasir", "GET");
 
       if (resProduk?.success && Array.isArray(resProduk.data)) {
         const normalizedProducts = resProduk.data.map(normalizeProduct);
-        const qq = query.trim().toLowerCase();
-
-        // Filter produk berdasarkan query
-        const filtered = normalizedProducts.filter(
-          (p) =>
-            (p.nama_item || "").toLowerCase().includes(qq) ||
-            String(p.id || "")
-              .toLowerCase()
-              .includes(qq)
-        );
-
-        setProducts(filtered);
+        setAllProducts(normalizedProducts);
+        setDisplayedProducts(filterProducts(normalizedProducts, query));
       } else {
-        setProducts([]);
+        setAllProducts([]);
+        setDisplayedProducts([]);
         if (resProduk?.error?.includes("Akses ditolak")) {
           setError(
             "Akses ditolak: Anda tidak memiliki izin untuk mengakses data produk"
@@ -82,7 +101,8 @@ export default function InputPenjualan() {
         }
       }
     } catch (err) {
-      setProducts([]);
+      setAllProducts([]);
+      setDisplayedProducts([]);
       if (
         err.message?.includes("Akses ditolak") ||
         err.message?.includes("401")
@@ -104,34 +124,21 @@ export default function InputPenjualan() {
     }
   };
 
-  // Handler untuk mencari anggota
-  const searchAnggota = async () => {
-    if (!queryAnggota.trim()) {
-      setAllAnggota([]);
-      return;
-    }
-
-    setLoadingAnggota(true);
-    setError(null);
-
+  // Load semua anggota saat komponen mount
+  const loadAllAnggota = async () => {
     try {
+      setLoadingAnggota(true);
+      setError(null);
+
       const resAnggota = await api("getAllAnggota", "GET");
 
       if (resAnggota?.success && Array.isArray(resAnggota.data)) {
         const normalizedAnggota = resAnggota.data.map(normalizeAnggota);
-        const qq = queryAnggota.trim().toLowerCase();
-
-        // Filter anggota berdasarkan query
-        const filtered = normalizedAnggota.filter(
-          (a) =>
-            (a.nama_lengkap || "").toLowerCase().includes(qq) ||
-            (a.email || "").toLowerCase().includes(qq) ||
-            String(a.anggota_id || "").includes(qq)
-        );
-
-        setAllAnggota(filtered);
+        setAllAnggota(normalizedAnggota);
+        setDisplayedAnggota(filterAnggota(normalizedAnggota, queryAnggota));
       } else {
         setAllAnggota([]);
+        setDisplayedAnggota([]);
         if (resAnggota?.error?.includes("Akses ditolak")) {
           setError(
             "Akses ditolak: Anda tidak memiliki izin untuk mengakses data anggota"
@@ -140,6 +147,7 @@ export default function InputPenjualan() {
       }
     } catch (err) {
       setAllAnggota([]);
+      setDisplayedAnggota([]);
       if (
         err.message?.includes("Akses ditolak") ||
         err.message?.includes("401")
@@ -160,6 +168,31 @@ export default function InputPenjualan() {
       setLastUpdate(new Date());
     }
   };
+
+  // Effect untuk load data awal
+  useEffect(() => {
+    const initializeData = async () => {
+      await Promise.all([loadAllProducts(), loadAllAnggota()]);
+    };
+    initializeData();
+  }, []);
+
+  // Effect untuk update displayed products ketika query berubah
+  useEffect(() => {
+    if (allProducts.length > 0) {
+      const filtered = filterProducts(allProducts, query);
+      setDisplayedProducts(filtered);
+    }
+  }, [query, allProducts, filterProducts]);
+
+  // Effect untuk update displayed anggota ketika queryAnggota berubah
+  useEffect(() => {
+    if (allAnggota.length > 0) {
+      const filtered = filterAnggota(allAnggota, queryAnggota);
+      setDisplayedAnggota(filtered);
+      setShowAnggotaList(filtered.length > 0 && queryAnggota.trim() !== "");
+    }
+  }, [queryAnggota, allAnggota, filterAnggota]);
 
   // Handler untuk menambah produk ke keranjang
   const addToCart = (product) => {
@@ -196,8 +229,8 @@ export default function InputPenjualan() {
     setMemberData(anggota);
     setManualAnggotaId(anggota.anggota_id);
     setShowAnggotaList(false);
-    setQueryAnggota("");
-    setAllAnggota([]);
+    setQueryAnggota(anggota.nama_lengkap); // Tampilkan nama yang dipilih di input
+    setDisplayedAnggota([]);
   };
 
   // Handler untuk menghapus pilihan anggota
@@ -205,6 +238,7 @@ export default function InputPenjualan() {
     setMemberData(null);
     setManualAnggotaId(null);
     setQueryAnggota("");
+    setDisplayedAnggota([]);
   };
 
   // Handler untuk mengupdate quantity
@@ -214,7 +248,7 @@ export default function InputPenjualan() {
       return;
     }
 
-    const product = products.find((p) => p.id === id);
+    const product = allProducts.find((p) => p.id === id);
     if (product && newQty > product.stok_item) {
       setError(
         `Maksimum stok ${product.nama_item} adalah ${product.stok_item}`
@@ -338,9 +372,9 @@ export default function InputPenjualan() {
         setManualAnggotaId(null);
         setMemberData(null);
         setQueryAnggota("");
-        setProducts([]);
-        setAllAnggota([]);
         setQuery("");
+        setDisplayedProducts(filterProducts(allProducts, ""));
+        setDisplayedAnggota([]);
 
         // Clear success message setelah 5 detik
         setTimeout(() => setSuccessMessage(""), 5000);
@@ -382,15 +416,6 @@ export default function InputPenjualan() {
   const clearMessages = () => {
     setError(null);
     setSuccessMessage("");
-  };
-
-  // Clear semua data pencarian
-  const clearAllSearch = () => {
-    setQuery("");
-    setQueryAnggota("");
-    setProducts([]);
-    setAllAnggota([]);
-    setError(null);
   };
 
   // Handle click outside untuk dropdown
@@ -498,55 +523,34 @@ export default function InputPenjualan() {
                   Cari Produk
                 </h2>
                 <p className="text-indigo-200 text-xs sm:text-sm">
-                  {products.length} produk ditemukan {query && ` • "${query}"`}
+                  {displayedProducts.length} dari {allProducts.length} produk ditemukan {query && ` • "${query}"`}
                 </p>
               </div>
 
               {/* Search Bar */}
               <div className="p-3 sm:p-4 border-b border-slate-600/40">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-slate-900/60 border border-slate-700/40 rounded-xl px-3 py-2 transition-shadow focus-within:shadow-lg">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Cari produk (nama atau ID)..."
-                      className="bg-transparent flex-1 outline-none placeholder-slate-500 text-slate-200 text-sm w-full"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && searchProducts()}
+                <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-slate-900/60 border border-slate-700/40 rounded-xl px-3 py-2 transition-shadow focus-within:shadow-lg">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                     />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={searchProducts}
-                      disabled={loading}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors border border-indigo-500 text-sm font-medium"
-                    >
-                      {loading ? "Mencari..." : "Cari"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setQuery("");
-                        setProducts([]);
-                      }}
-                      className="px-4 py-2 bg-slate-700/60 text-slate-300 rounded-xl hover:bg-slate-600/60 transition-colors border border-slate-600/40 text-sm"
-                    >
-                      Clear
-                    </button>
-                  </div>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Ketik untuk mencari produk (nama atau ID)..."
+                    className="bg-transparent flex-1 outline-none placeholder-slate-500 text-slate-200 text-sm w-full"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
                 </div>
               </div>
 
@@ -579,11 +583,11 @@ export default function InputPenjualan() {
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
                               </div>
                               <p className="text-slate-400 mt-2 text-sm">
-                                Mencari produk...
+                                Memuat produk...
                               </p>
                             </td>
                           </tr>
-                        ) : products.length === 0 ? (
+                        ) : displayedProducts.length === 0 ? (
                           <tr>
                             <td
                               colSpan={4}
@@ -591,12 +595,12 @@ export default function InputPenjualan() {
                             >
                               <div className="text-4xl mb-2">📦</div>
                               {query
-                                ? "Ketik dan tekan enter atau klik 'Cari' untuk mencari"
-                                : "Masukkan kata kunci untuk mencari produk"}
+                                ? `Tidak ada produk ditemukan untuk "${query}"`
+                                : "Ketik di atas untuk mencari produk"}
                             </td>
                           </tr>
                         ) : (
-                          products.map((product) => (
+                          displayedProducts.map((product) => (
                             <tr
                               key={product.id}
                               className="hover:bg-slate-700/20 transition-colors"
@@ -653,18 +657,18 @@ export default function InputPenjualan() {
                       <div className="text-center py-6">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500 mx-auto mb-2"></div>
                         <p className="text-slate-400 text-sm">
-                          Mencari produk...
+                          Memuat produk...
                         </p>
                       </div>
-                    ) : products.length === 0 ? (
+                    ) : displayedProducts.length === 0 ? (
                       <div className="text-center py-6 text-slate-400">
                         <div className="text-4xl mb-2">📦</div>
                         {query
-                          ? "Ketik dan tekan enter atau klik 'Cari' untuk mencari"
-                          : "Masukkan kata kunci untuk mencari produk"}
+                          ? `Tidak ada produk ditemukan untuk "${query}"`
+                          : "Ketik di atas untuk mencari produk"}
                       </div>
                     ) : (
-                      products.map((product) => (
+                      displayedProducts.map((product) => (
                         <div
                           key={product.id}
                           className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/40"
@@ -711,6 +715,22 @@ export default function InputPenjualan() {
                     )}
                   </div>
                 </div>
+
+                {/* Info Pencarian */}
+                {allProducts.length > 3 && !query && (
+                  <div className="p-3 bg-slate-700/20 border-t border-slate-600/40">
+                    <p className="text-xs text-slate-400 text-center">
+                      Menampilkan 3 produk pertama. Ketik untuk mencari produk lainnya.
+                    </p>
+                  </div>
+                )}
+                {query && displayedProducts.length > 0 && (
+                  <div className="p-3 bg-slate-700/20 border-t border-slate-600/40">
+                    <p className="text-xs text-slate-400 text-center">
+                      Menampilkan {displayedProducts.length} hasil pencarian untuk "{query}"
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -736,59 +756,42 @@ export default function InputPenjualan() {
                   Cari Anggota
                 </h2>
                 <p className="text-purple-200 text-xs sm:text-sm">
-                  {allAnggota.length} anggota ditemukan{" "}
+                  {displayedAnggota.length} anggota ditemukan{" "}
                   {queryAnggota && ` • "${queryAnggota}"`}
                 </p>
               </div>
 
               {/* Search Bar */}
-              <div className="p-3 sm:p-4 border-b border-slate-600/40">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-slate-900/60 border border-slate-700/40 rounded-xl px-3 py-2 transition-shadow focus-within:shadow-lg">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Cari anggota (nama, email, ID)..."
-                      className="bg-transparent flex-1 outline-none placeholder-slate-500 text-slate-200 text-sm w-full"
-                      value={queryAnggota}
-                      onChange={(e) => setQueryAnggota(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && searchAnggota()}
+              <div className="p-3 sm:p-4 border-b border-slate-600/40 relative" ref={dropdownRef}>
+                <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-slate-900/60 border border-slate-700/40 rounded-xl px-3 py-2 transition-shadow focus-within:shadow-lg">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                     />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={searchAnggota}
-                      disabled={loadingAnggota}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors border border-purple-500 text-sm font-medium"
-                    >
-                      {loadingAnggota ? "..." : "Cari"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setQueryAnggota("");
-                        setAllAnggota([]);
-                      }}
-                      className="px-4 py-2 bg-slate-700/60 text-slate-300 rounded-xl hover:bg-slate-600/60 transition-colors border border-slate-600/40 text-sm"
-                    >
-                      Clear
-                    </button>
-                  </div>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Ketik untuk mencari anggota (nama, email, ID)..."
+                    className="bg-transparent flex-1 outline-none placeholder-slate-500 text-slate-200 text-sm w-full"
+                    value={queryAnggota}
+                    onChange={(e) => setQueryAnggota(e.target.value)}
+                    onFocus={() => {
+                      if (queryAnggota.trim() && displayedAnggota.length > 0) {
+                        setShowAnggotaList(true);
+                      }
+                    }}
+                  />
                 </div>
               </div>
-
               {/* Anggota Table */}
               <div className="overflow-hidden">
                 <div className="min-w-0">
@@ -821,11 +824,11 @@ export default function InputPenjualan() {
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500"></div>
                               </div>
                               <p className="text-slate-400 mt-2 text-sm">
-                                Mencari anggota...
+                                Memuat anggota...
                               </p>
                             </td>
                           </tr>
-                        ) : allAnggota.length === 0 ? (
+                        ) : displayedAnggota.length === 0 ? (
                           <tr>
                             <td
                               colSpan={5}
@@ -833,12 +836,12 @@ export default function InputPenjualan() {
                             >
                               <div className="text-4xl mb-2">👥</div>
                               {queryAnggota
-                                ? "Ketik dan tekan enter atau klik 'Cari' untuk mencari"
-                                : "Masukkan kata kunci untuk mencari anggota"}
+                                ? `Tidak ada anggota ditemukan untuk "${queryAnggota}"`
+                                : "Ketik di atas untuk mencari anggota"}
                             </td>
                           </tr>
                         ) : (
-                          allAnggota.map((anggota) => (
+                          displayedAnggota.map((anggota) => (
                             <tr
                               key={anggota.anggota_id}
                               className="hover:bg-slate-700/20 transition-colors"
@@ -887,18 +890,18 @@ export default function InputPenjualan() {
                       <div className="text-center py-6">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500 mx-auto mb-2"></div>
                         <p className="text-slate-400 text-sm">
-                          Mencari anggota...
+                          Memuat anggota...
                         </p>
                       </div>
-                    ) : allAnggota.length === 0 ? (
+                    ) : displayedAnggota.length === 0 ? (
                       <div className="text-center py-6 text-slate-400">
                         <div className="text-4xl mb-2">👥</div>
                         {queryAnggota
-                          ? "Ketik dan tekan enter atau klik 'Cari' untuk mencari"
-                          : "Masukkan kata kunci untuk mencari anggota"}
+                          ? `Tidak ada anggota ditemukan untuk "${queryAnggota}"`
+                          : "Ketik di atas untuk mencari anggota"}
                       </div>
                     ) : (
-                      allAnggota.map((anggota) => (
+                      displayedAnggota.map((anggota) => (
                         <div
                           key={anggota.anggota_id}
                           className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/40"
@@ -940,7 +943,6 @@ export default function InputPenjualan() {
               </div>
             </div>
           </div>
-
           {/* Cart Section */}
           <div className="lg:col-span-1">
             <div className="bg-gradient-to-tr from-slate-800/60 to-slate-900/70 backdrop-blur-lg border border-slate-700/40 rounded-2xl shadow-xl sticky top-4">

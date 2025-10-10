@@ -18,31 +18,41 @@ export default function HistoryTransaksi({ user }) {
     loadHistoryTransaksi();
   }, []);
 
-const loadHistoryTransaksi = async (filters = {}) => {
-  try {
-    setLoading(true);
-    
-    console.log("Loading transaksi dengan filters:", filters);
-    
-    const res = await api({
-      action: "getHistoryTransaksi",
-      method: "GET",
-      params: filters
-    });
-    
-    if (res && res.success) {
-      setTransaksi(res.data || []);
-    } else {
-      console.error("Error:", res);
+  const loadHistoryTransaksi = async (filters = {}) => {
+    try {
+      setLoading(true);
+      
+      console.log("Loading transaksi dengan filters:", filters);
+      
+      // Build parameters object untuk filter
+      const params = {};
+      
+      // Hanya tambahkan parameter yang memiliki nilai
+      if (filters.tanggal_awal) params.tanggal_awal = filters.tanggal_awal;
+      if (filters.tanggal_akhir) params.tanggal_akhir = filters.tanggal_akhir;
+      if (filters.jenis_transaksi) params.jenis_transaksi = filters.jenis_transaksi;
+      if (filters.status) params.status = filters.status;
+      
+      console.log("Sending params to API:", params);
+      
+      // Gunakan fungsi api yang diperbaiki
+      const res = await api("getHistoryTransaksi", "GET", null, params);
+      
+      if (res && res.success) {
+        console.log("Data received:", res.data);
+        setTransaksi(res.data || []);
+      } else {
+        console.error("API Error:", res);
+        setTransaksi([]);
+      }
+    } catch (error) {
+      console.error("Error loading transaksi:", error);
       setTransaksi([]);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Error:", error);
-    setTransaksi([]);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
   const handleFilter = async () => {
     const filterParams = {};
     
@@ -65,6 +75,7 @@ const loadHistoryTransaksi = async (filters = {}) => {
       status: ""
     });
     loadHistoryTransaksi();
+    setCurrentPage(1);
   };
 
   // Function untuk test API langsung - berguna untuk debugging
@@ -72,15 +83,7 @@ const loadHistoryTransaksi = async (filters = {}) => {
     try {
       console.log("Testing API directly...");
       
-      // Test dengan GET request
-      const response = await fetch('http://localhost/api/api.php?action=getHistoryTransaksi', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      const result = await response.json();
+      const result = await api("getHistoryTransaksi", "GET");
       console.log('Test API Result:', result);
       
     } catch (error) {
@@ -88,7 +91,7 @@ const loadHistoryTransaksi = async (filters = {}) => {
     }
   };
 
-  // Format functions tetap sama...
+  // Format functions
   const formatRupiah = (angka) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -173,13 +176,6 @@ const loadHistoryTransaksi = async (filters = {}) => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">History Transaksi</h1>
           <p className="text-gray-600 mt-2">Riwayat semua transaksi yang telah dilakukan</p>
-          {/* Tombol debug - uncomment jika perlu */}
-          {/* <button 
-            onClick={testAPI}
-            className="bg-blue-500 text-white px-4 py-2 rounded-md mt-4"
-          >
-            Test API
-          </button> */}
         </div>
 
         {/* Filter Section */}
@@ -271,6 +267,12 @@ const loadHistoryTransaksi = async (filters = {}) => {
               <div className="text-gray-400 text-6xl mb-4">📝</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">Tidak ada transaksi</h3>
               <p className="text-gray-500">Tidak ada data transaksi yang ditemukan</p>
+              <button 
+                onClick={testAPI}
+                className="bg-blue-500 text-white px-4 py-2 rounded-md mt-4 text-sm"
+              >
+                Test API Connection
+              </button>
             </div>
           ) : (
             <>

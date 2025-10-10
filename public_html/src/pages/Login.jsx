@@ -1,6 +1,7 @@
+// src/pages/Login.jsx (DIPERBAIKI)
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../utils/api";
+import { api, setToken } from "../utils/api"; // IMPORT setToken
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -10,6 +11,19 @@ export default function Login({ onLogin }) {
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+
+  // Normalisasi user data sama seperti di App.jsx
+  const normalizeUser = (userData) => {
+    if (!userData) return null;
+    
+    return {
+      id: userData.user_id || userData.id || null,
+      username: userData.username || userData.nama_user || "",
+      nama_user: userData.nama_user || userData.username || "",
+      role: (userData.role || "").toLowerCase(),
+      ...userData
+    };
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -26,30 +40,30 @@ export default function Login({ onLogin }) {
         return;
       }
 
+      console.log("🔍 Attempting login...");
       const res = await api("login", "POST", {
         username: trimmedUsername,
         password: trimmedPassword,
       });
 
+      console.log("🔍 Login response:", res);
+
       if (res && res.success && res.token && res.user) {
-        sessionStorage.setItem("token", res.token);
-        if (rememberMe) localStorage.setItem("token", res.token);
-        else localStorage.removeItem("token");
-
-        const normalizedUser = {
-          id: res.user.user_id ?? null,
-          nama_user: res.user.username ?? "",
-          role: (res.user.role ?? "").toLowerCase(),
-        };
-
+        // Gunakan setToken dari api.js untuk konsistensi
+        setToken(res.token, rememberMe);
+        
+        const normalizedUser = normalizeUser(res.user);
+        console.log("✅ Login successful:", normalizedUser);
+        
         onLogin(normalizedUser);
 
+        // Navigasi berdasarkan role
         switch (normalizedUser.role) {
           case "kasir":
             navigate("/kasir");
             break;
           case "admin":
-            navigate("/stok");
+            navigate("/dashboard");
             break;
           case "anggota":
             navigate("/user");
@@ -59,19 +73,19 @@ export default function Login({ onLogin }) {
             break;
         }
       } else {
-        setError(
-          (res && (res.error || res.message)) ||
-            "Login gagal. Silakan coba lagi."
-        );
+        const errorMessage = res?.error || res?.message || "Login gagal. Silakan coba lagi.";
+        setError(errorMessage);
+        console.error("❌ Login failed:", errorMessage);
       }
     } catch (err) {
-      console.error("Login error:", err);
+      console.error("❌ Login error:", err);
       setError(err.message || "Terjadi kesalahan jaringan. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
   };
 
+  // ... (JSX UI tetap sama, tidak perlu diubah)
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#061226] via-[#0b1220] to-[#07102a] p-4">
       {/* Background shapes */}

@@ -1,0 +1,14 @@
+{
+    "name": "myproject/api",
+    "description": "API Management System",
+    "type": "project",
+    "require": {
+        "php": "^7.4|^8.0",
+        "firebase/php-jwt": "^6.10"
+    },
+    "autoload": {
+        "files": [
+            "config.php"
+        ]
+    }
+}

@@ -1,4 +1,4 @@
-// src/App.jsx (DIPERBAIKI DENGAN FOOTER DAN ROUTE BARU)
+// src/App.jsx (DIPERBAIKI)
 import { useState, useEffect } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
@@ -10,6 +10,7 @@ import ReviewOpname from "./pages/ReviewOpname";
 import HistoryTransaksi from "./pages/HistoryTransaksi";
 import Stok from "./pages/Stock";
 import DashboardAdmin from "./pages/Dashboard";
+import ShuManagement from "./pages/ShuManagement";
 import KelolaAnggota from "./pages/KelolaAnggota";
 import KelolaKasir from "./pages/KelolaKasir";
 import Laporan from "./pages/Laporan";
@@ -19,29 +20,23 @@ import Riwayat from "./pages/Riwayat";
 import Profil from "./pages/Profil";
 import SetorAdminPage from "./pages/SetorAdmin";
 import TarikTunaiPage from "./pages/TarikTunai";
-import MonitorBarang from "./pages/MonitorBarang"; // IMPORT MONITOR BARANG
+import MonitorBarang from "./pages/MonitorBarang";
 import Navbar from "./components/Navbar";
-import Footer from "./components/Footer"; // IMPORT FOOTER
+import Footer from "./components/Footer";
 import ProtectedRoute from "./components/ProtectedRoute";
-import { api } from "../src/utils/api";
+import { api, getToken, removeToken } from "./utils/api"; // IMPORT FUNGSI TOKEN
 
 function App() {
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  const getTokenFromStorage = () => {
-    return (
-      localStorage.getItem("token") || sessionStorage.getItem("token") || null
-    );
-  };
-
-  // Map role ke route - PERBAIKI: admin ke dashboard
+  // Map role ke route
   const getRouteByRole = (role) => {
     switch (role) {
       case "kasir":
         return "/kasir";
       case "admin":
-        return "/dashboard"; // DIUBAH: dari /stok ke /dashboard
+        return "/dashboard";
       case "anggota":
         return "/user";
       default:
@@ -49,35 +44,52 @@ function App() {
     }
   };
 
+  // Normalisasi user data secara konsisten
+  const normalizeUser = (userData) => {
+    if (!userData) return null;
+    
+    return {
+      id: userData.user_id || userData.id || null,
+      username: userData.username || userData.nama_user || "",
+      nama_user: userData.nama_user || userData.username || "",
+      role: (userData.role || "").toLowerCase(),
+      // Tambahkan field lain jika diperlukan
+      ...userData
+    };
+  };
+
   // Auto-login saat App mount
   useEffect(() => {
     const tryAutoLogin = async () => {
       setCheckingAuth(true);
-      const token = getTokenFromStorage();
+      const token = getToken();
+      
+      console.log("🔍 Auto-login check - Token:", token ? "Ada" : "Tidak Ada");
+      
       if (!token) {
+        console.log("🔍 No token found, skipping auto-login");
         setCheckingAuth(false);
         setUser(null);
         return;
       }
 
       try {
+        console.log("🔍 Attempting auto-login...");
         const res = await api("autoLogin", "GET");
+        console.log("🔍 Auto-login response:", res);
+        
         if (res && res.success && res.user) {
-          const normalizedUser = {
-            id: res.user.user_id ?? null,
-            username: res.user.username ?? res.user.nama_user ?? "",
-            role: (res.user.role ?? "").toLowerCase(),
-          };
+          const normalizedUser = normalizeUser(res.user);
+          console.log("✅ Auto-login successful:", normalizedUser);
           setUser(normalizedUser);
         } else {
-          localStorage.removeItem("token");
-          sessionStorage.removeItem("token");
+          console.log("❌ Auto-login failed:", res?.error);
+          removeToken();
           setUser(null);
         }
       } catch (err) {
-        console.error("Auto-login error:", err);
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("token");
+        console.error("❌ Auto-login error:", err);
+        removeToken();
         setUser(null);
       } finally {
         setCheckingAuth(false);
@@ -97,12 +109,11 @@ function App() {
 
   return (
     <HashRouter>
-      {/* Gunakan flex container untuk layout yang tepat */}
       <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         {/* Navbar */}
         {user && <Navbar user={user} setUser={setUser} />}
 
-        {/* Main content area - flex-1 agar memenuhi sisa space */}
+        {/* Main content area */}
         <main className="flex-1">
           <Routes>
             {/* PUBLIC ROUTES */}
@@ -172,7 +183,6 @@ function App() {
               }
             />
 
-            {/* TAMBAHKAN ROUTE UNTUK SETOR ADMIN */}
             <Route
               path="/kasir/setor-admin"
               element={
@@ -182,7 +192,6 @@ function App() {
               }
             />
 
-            {/* TAMBAHKAN ROUTE UNTUK TARIK TUNAI */}
             <Route
               path="/kasir/tarik-tunai"
               element={
@@ -201,7 +210,14 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
+          <Route
+              path="/shu-management"
+              element={
+                <ProtectedRoute user={user} allowedRoles={["admin"]}>
+                  <ShuManagement user={user} />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/dashboard"
               element={
@@ -275,7 +291,7 @@ function App() {
               }
             />
 
-            {/* SHARED ROUTES (untuk semua role) */}
+            {/* SHARED ROUTES */}
             <Route
               path="/profil"
               element={
@@ -334,7 +350,7 @@ function App() {
           </Routes>
         </main>
 
-        {/* Footer - mt-auto agar selalu di bawah */}
+        {/* Footer */}
         {user && <Footer />}
       </div>
     </HashRouter>

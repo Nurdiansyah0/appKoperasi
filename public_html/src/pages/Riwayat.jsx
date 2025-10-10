@@ -272,12 +272,6 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
           <div className="lg:col-span-3 space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-              <div className="bg-gradient-to-tr from-slate-800/60 to-slate-900/70 backdrop-blur-lg border border-slate-700/40 rounded-2xl p-4 text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-white mb-1">
-                  {transactions.length}
-                </div>
-                <div className="text-slate-400 text-sm">Total Transaksi</div>
-              </div>
               <div className="bg-gradient-to-tr from-emerald-900/50 to-emerald-800/40 backdrop-blur-lg border border-emerald-500/30 rounded-2xl p-4 text-center">
                 <div className="text-2xl sm:text-3xl font-bold text-emerald-400 mb-1">
                   {totalSelesai}
@@ -289,12 +283,6 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
                   {totalPending}
                 </div>
                 <div className="text-amber-300 text-sm">Pending</div>
-              </div>
-              <div className="bg-gradient-to-tr from-red-900/50 to-red-800/40 backdrop-blur-lg border border-red-500/30 rounded-2xl p-4 text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-red-400 mb-1">
-                  {totalDitolak}
-                </div>
-                <div className="text-red-300 text-sm">Ditolak</div>
               </div>
             </div>
 
@@ -341,7 +329,6 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
                     <option value="all">Semua Status</option>
                     <option value="selesai">Selesai</option>
                     <option value="pending">Pending</option>
-                    <option value="ditolak">Ditolak</option>
                   </select>
                 </div>
 
@@ -407,7 +394,7 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
                             Produk
                           </th>
                           <th className="px-3 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-slate-300 uppercase tracking-wider">
-                            Jumlah
+                            Jumlah Item
                           </th>
                           <th className="px-3 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-slate-300 uppercase tracking-wider">
                             Total
@@ -434,7 +421,7 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
                                 )}
                               </div>
                               <div className="text-xs text-slate-400">
-                                ID:{" "}
+                                item:{" "}
                                 {transaction.id_transaksi || `TRX-${idx + 1}`}
                               </div>
                             </td>
@@ -510,7 +497,7 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
 
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
-                            <span className="text-slate-400">Jumlah:</span>
+                            <span className="text-slate-400">Jumlah Item:</span>
                             <div className="text-white font-medium">
                               {transaction.items?.reduce(
                                 (sum, i) => sum + (i.jumlah || 0),
@@ -560,132 +547,6 @@ export default function Riwayat({ anggotaId: propAnggotaId = null }) {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-gradient-to-tr from-slate-800/60 to-slate-900/70 backdrop-blur-lg border border-slate-700/40 rounded-2xl shadow-xl sticky top-4">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-4 sm:px-6 py-3 sm:py-4 rounded-t-2xl">
-                <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 sm:h-5 sm:w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                    />
-                  </svg>
-                  Statistik
-                </h2>
-              </div>
-
-              <div className="p-3 sm:p-4 space-y-4">
-                {/* Progress Ringkasan */}
-                <div className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/40">
-                  <div className="text-sm font-medium text-slate-300 mb-3">
-                    Ringkasan Status
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400">Selesai</span>
-                      <span className="text-xs text-emerald-400 font-medium">
-                        {totalSelesai}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-600 rounded-full h-1">
-                      <div
-                        className="bg-emerald-500 h-1 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${
-                            (totalSelesai / transactions.length) * 100
-                          }%`,
-                        }}
-                      ></div>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400">Pending</span>
-                      <span className="text-xs text-amber-400 font-medium">
-                        {totalPending}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-600 rounded-full h-1">
-                      <div
-                        className="bg-amber-500 h-1 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${
-                            (totalPending / transactions.length) * 100
-                          }%`,
-                        }}
-                      ></div>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400">Ditolak</span>
-                      <span className="text-xs text-red-400 font-medium">
-                        {totalDitolak}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-600 rounded-full h-1">
-                      <div
-                        className="bg-red-500 h-1 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${
-                            (totalDitolak / transactions.length) * 100
-                          }%`,
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Panel */}
-                <div className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/40">
-                  <div className="text-sm font-medium text-slate-300 mb-2">
-                    Informasi
-                  </div>
-                  <div className="text-xs text-slate-400 space-y-1">
-                    <div>• Data diperbarui otomatis</div>
-                    <div>
-                      • Filter aktif:{" "}
-                      {filterStatus === "all" ? "Semua Status" : filterStatus}
-                    </div>
-                    <div>
-                      • Total ditampilkan: {filteredTransactions.length}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Refresh Button */}
-                <button
-                  onClick={() => fetchHistori(propAnggotaId)}
-                  className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 py-2 sm:py-3 font-semibold text-white transition-transform transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 text-sm sm:text-base border border-indigo-500"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 sm:h-5 sm:w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                  Refresh Data
-                </button>
               </div>
             </div>
           </div>

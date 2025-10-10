@@ -1,10 +1,15 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/Logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Koperasi Pk</title>
+    
+    <!-- Tambahkan meta tag CSP ini -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="connect-src 'self' http://localhost:5173 ws://localhost:5173 https://koperasipkbatam.my.id;" />
+    
+    <title>Koperasi App</title>
   </head>
   <body>
     <div id="root"></div>

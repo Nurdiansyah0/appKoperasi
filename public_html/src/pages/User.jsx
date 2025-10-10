@@ -563,11 +563,6 @@ const UserDashboard = () => {
             )}
           </div>
         </div>
-
-        {/* Footer note */}
-        <div className="mt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} Nurdiansyah - Koperasi PK Batam
-        </div>
       </div>
     </div>
   );

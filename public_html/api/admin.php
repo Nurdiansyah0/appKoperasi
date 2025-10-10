@@ -340,125 +340,6 @@ public static function getTransaksiHariIni($conn) {
     ]);
 }
 
-// Tambahkan di BE.Admin.php - perbaiki function getLaporanTransaksi
-public static function getLaporanTransaksi($conn) {
-    $user = getAuthUser(self::$jwt_secret);
-    self::requireRole($user, 'admin');
-
-    $data = getInputData();
-    $tanggal_awal = $conn->real_escape_string($data['tanggal_awal'] ?? '');
-    $tanggal_akhir = $conn->real_escape_string($data['tanggal_akhir'] ?? '');
-
-    // Jika tidak ada filter tanggal, gunakan bulan ini
-    if (empty($tanggal_awal) || empty($tanggal_akhir)) {
-        $tanggal_awal = date('Y-m-01');
-        $tanggal_akhir = date('Y-m-t');
-    }
-
-    // Query untuk total transaksi dan pendapatan
-    $sql_total = "SELECT 
-                    COUNT(*) as total_transaksi,
-                    COALESCE(SUM(total_harga), 0) as total_pendapatan
-                FROM transaksi 
-                WHERE DATE(created_at) BETWEEN ? AND ?
-                AND status = 'selesai'";
-
-    $stmt_total = $conn->prepare($sql_total);
-    if(!$stmt_total) {
-        sendResponse(false, "Query preparation failed: " . $conn->error);
-        return;
-    }
-
-    $stmt_total->bind_param("ss", $tanggal_awal, $tanggal_akhir);
-    $stmt_total->execute();
-    $result_total = $stmt_total->get_result();
-    $row_total = $result_total->fetch_assoc();
-    $stmt_total->close();
-
-    // Query untuk breakdown metode pembayaran
-    $sql_breakdown = "SELECT 
-                        metode_pembayaran,
-                        COALESCE(SUM(total_harga), 0) as total
-                    FROM transaksi 
-                    WHERE DATE(created_at) BETWEEN ? AND ?
-                    AND status = 'selesai'
-                    GROUP BY metode_pembayaran";
-
-    $stmt_breakdown = $conn->prepare($sql_breakdown);
-    if(!$stmt_breakdown) {
-        sendResponse(false, "Query preparation failed: " . $conn->error);
-        return;
-    }
-
-    $stmt_breakdown->bind_param("ss", $tanggal_awal, $tanggal_akhir);
-    $stmt_breakdown->execute();
-    $result_breakdown = $stmt_breakdown->get_result();
-    
-    $breakdown = [
-        'cash' => 0,
-        'qr' => 0,
-        'ewallet' => 0,
-        'transfer' => 0,
-        'hutang' => 0
-    ];
-
-    while($row = $result_breakdown->fetch_assoc()) {
-        $metode = $row['metode_pembayaran'];
-        $breakdown[$metode] = (float)$row['total'];
-    }
-    $stmt_breakdown->close();
-
-    // Query untuk breakdown per kasir
-    $sql_kasir = "SELECT 
-                    u.username as nama_kasir,
-                    COUNT(*) as total_transaksi,
-                    COALESCE(SUM(t.total_harga), 0) as total_pendapatan,
-                    COALESCE(SUM(CASE WHEN t.metode_pembayaran = 'cash' THEN t.total_harga ELSE 0 END), 0) as cash,
-                    COALESCE(SUM(CASE WHEN t.metode_pembayaran = 'qr' THEN t.total_harga ELSE 0 END), 0) as qr,
-                    COALESCE(SUM(CASE WHEN t.metode_pembayaran = 'ewallet' THEN t.total_harga ELSE 0 END), 0) as ewallet,
-                    COALESCE(SUM(CASE WHEN t.metode_pembayaran = 'transfer' THEN t.total_harga ELSE 0 END), 0) as transfer,
-                    COALESCE(SUM(CASE WHEN t.metode_pembayaran = 'hutang' THEN t.total_harga ELSE 0 END), 0) as hutang
-                FROM transaksi t
-                JOIN users u ON t.kasir_id = u.user_id
-                WHERE DATE(t.created_at) BETWEEN ? AND ?
-                AND t.status = 'selesai'
-                GROUP BY t.kasir_id, u.username
-                ORDER BY total_pendapatan DESC";
-
-    $stmt_kasir = $conn->prepare($sql_kasir);
-    if(!$stmt_kasir) {
-        sendResponse(false, "Query preparation failed: " . $conn->error);
-        return;
-    }
-
-    $stmt_kasir->bind_param("ss", $tanggal_awal, $tanggal_akhir);
-    $stmt_kasir->execute();
-    $result_kasir = $stmt_kasir->get_result();
-    
-    $breakdown_kasir = [];
-    while($row = $result_kasir->fetch_assoc()) {
-        $breakdown_kasir[] = [
-            'nama_kasir' => $row['nama_kasir'],
-            'total_transaksi' => (int)$row['total_transaksi'],
-            'total_pendapatan' => (float)$row['total_pendapatan'],
-            'cash' => (float)$row['cash'],
-            'qr' => (float)$row['qr'],
-            'ewallet' => (float)$row['ewallet'],
-            'transfer' => (float)$row['transfer'],
-            'hutang' => (float)$row['hutang']
-        ];
-    }
-    $stmt_kasir->close();
-
-    sendResponse(true, [
-        "total_transaksi" => (int)$row_total['total_transaksi'],
-        "total_pendapatan" => (float)$row_total['total_pendapatan'],
-        "breakdown_pembayaran" => $breakdown,
-        "breakdown_kasir" => $breakdown_kasir,
-        "tanggal_awal" => $tanggal_awal,
-        "tanggal_akhir" => $tanggal_akhir
-    ]);
-}
 
 // Tambahkan method ini di class Admin - BE.Admin.php
 public static function getMonitorBarang($conn) {
@@ -469,6 +350,7 @@ public static function getMonitorBarang($conn) {
     $tanggal_awal = $_GET['tanggal_awal'] ?? '';
     $tanggal_akhir = $_GET['tanggal_akhir'] ?? '';
     $barang_id = $_GET['barang_id'] ?? '';
+    $group_by = $_GET['group_by'] ?? 'daily'; // 'daily' atau 'monthly'
 
     // Build WHERE clause
     $where_conditions = ["t.status = 'selesai'"];
@@ -498,18 +380,46 @@ public static function getMonitorBarang($conn) {
 
     $where_clause = implode(' AND ', $where_conditions);
 
-    $sql = "SELECT 
-                b.nama_barang,
-                DATE(t.created_at) as tanggal,
-                SUM(td.jumlah) as total_terjual,
-                SUM(td.subtotal) as total_pendapatan,
-                SUM(td.keuntungan) as total_keuntungan
-            FROM transaksi_detail td
-            JOIN transaksi t ON td.transaksi_id = t.transaksi_id
-            JOIN barang b ON td.barang_id = b.barang_id
-            WHERE $where_clause
-            GROUP BY b.barang_id, DATE(t.created_at)
-            ORDER BY tanggal DESC, total_terjual DESC";
+    // Tentukan grouping berdasarkan pilihan
+    if ($group_by === 'monthly') {
+        // Group by bulan - PERBAIKAN: Gunakan DATE_FORMAT yang konsisten
+        $sql = "SELECT 
+                    b.barang_id,
+                    b.nama_barang,
+                    DATE_FORMAT(t.created_at, '%Y-%m') as bulan,
+                    DATE_FORMAT(t.created_at, '%M %Y') as bulan_label,
+                    SUM(td.jumlah) as total_terjual,
+                    SUM(td.subtotal) as total_pendapatan,
+                    SUM(td.keuntungan) as total_keuntungan,
+                    COUNT(DISTINCT t.transaksi_id) as total_transaksi,
+                    GROUP_CONCAT(DISTINCT a.nama_lengkap SEPARATOR ', ') as pembeli
+                FROM transaksi_detail td
+                JOIN transaksi t ON td.transaksi_id = t.transaksi_id
+                JOIN barang b ON td.barang_id = b.barang_id
+                JOIN anggota a ON t.anggota_id = a.anggota_id
+                WHERE $where_clause
+                GROUP BY b.barang_id, b.nama_barang, DATE_FORMAT(t.created_at, '%Y-%m'), DATE_FORMAT(t.created_at, '%M %Y')
+                ORDER BY bulan DESC, total_terjual DESC";
+    } else {
+        // Group by harian (default) - PERBAIKAN: Tambahkan bulan_label untuk konsistensi
+        $sql = "SELECT 
+                    b.barang_id,
+                    b.nama_barang,
+                    DATE(t.created_at) as tanggal,
+                    DATE_FORMAT(t.created_at, '%M %Y') as bulan_label,
+                    SUM(td.jumlah) as total_terjual,
+                    SUM(td.subtotal) as total_pendapatan,
+                    SUM(td.keuntungan) as total_keuntungan,
+                    COUNT(DISTINCT t.transaksi_id) as total_transaksi,
+                    GROUP_CONCAT(DISTINCT a.nama_lengkap SEPARATOR ', ') as pembeli
+                FROM transaksi_detail td
+                JOIN transaksi t ON td.transaksi_id = t.transaksi_id
+                JOIN barang b ON td.barang_id = b.barang_id
+                JOIN anggota a ON t.anggota_id = a.anggota_id
+                WHERE $where_clause
+                GROUP BY b.barang_id, b.nama_barang, DATE(t.created_at), DATE_FORMAT(t.created_at, '%M %Y')
+                ORDER BY tanggal DESC, total_terjual DESC";
+    }
 
     $stmt = $conn->prepare($sql);
     
@@ -533,20 +443,39 @@ public static function getMonitorBarang($conn) {
     $rows = [];
     
     while ($r = $result->fetch_assoc()) {
-        $rows[] = [
-            'nama_barang' => $r['nama_barang'],
-            'tanggal' => $r['tanggal'],
-            'total_terjual' => (int)$r['total_terjual'],
-            'total_pendapatan' => (float)$r['total_pendapatan'],
-            'total_keuntungan' => (float)$r['total_keuntungan']
-        ];
+        if ($group_by === 'monthly') {
+            $rows[] = [
+                'barang_id' => (int)$r['barang_id'],
+                'nama_barang' => $r['nama_barang'],
+                'bulan' => $r['bulan'],
+                'bulan_label' => $r['bulan_label'],
+                'total_terjual' => (int)$r['total_terjual'],
+                'total_pendapatan' => (float)$r['total_pendapatan'],
+                'total_keuntungan' => (float)$r['total_keuntungan'],
+                'total_transaksi' => (int)$r['total_transaksi'],
+                'pembeli' => $r['pembeli']
+            ];
+        } else {
+            $rows[] = [
+                'barang_id' => (int)$r['barang_id'],
+                'nama_barang' => $r['nama_barang'],
+                'tanggal' => $r['tanggal'],
+                'bulan_label' => $r['bulan_label'],
+                'total_terjual' => (int)$r['total_terjual'],
+                'total_pendapatan' => (float)$r['total_pendapatan'],
+                'total_keuntungan' => (float)$r['total_keuntungan'],
+                'total_transaksi' => (int)$r['total_transaksi'],
+                'pembeli' => $r['pembeli']
+            ];
+        }
     }
     
     $stmt->close();
-    sendResponse(true, ["data" => $rows]);
+    sendResponse(true, [
+        "data" => $rows,
+        "group_by" => $group_by
+    ]);
 }
-
-// PERBAIKAN: Method getShuDistribusi dengan JOIN yang benar
 public static function getShuDistribusi($conn) {
     $user = getAuthUser(self::$jwt_secret);
     self::requireRole($user, 'admin');
@@ -574,7 +503,7 @@ public static function getShuDistribusi($conn) {
 
     $where_clause = implode(' AND ', $where_conditions);
 
-    // PERBAIKAN: Query JOIN yang benar - melalui tabel anggota ke users
+    // Query data SEMUA tanpa pagination - DIPERBAIKI
     $sql = "SELECT 
                 sd.shu_id,
                 sd.anggota_id,
@@ -583,68 +512,60 @@ public static function getShuDistribusi($conn) {
                 COALESCE(sd.shu_10_percent, 0) as shu_10_percent, 
                 COALESCE(sd.shu_30_percent, 0) as shu_30_percent,
                 sd.created_at,
-                u.username as nama_anggota,
+                a.nama_lengkap as nama_anggota,  -- ✅ Diubah: ambil dari tabel anggota
                 (COALESCE(sd.shu_60_percent, 0) + COALESCE(sd.shu_10_percent, 0) + COALESCE(sd.shu_30_percent, 0)) as total_shu
             FROM shu_distribusi sd
             JOIN anggota a ON sd.anggota_id = a.anggota_id
-            JOIN users u ON a.user_id = u.user_id
+            -- ✅ Dihapus: JOIN users u ON a.user_id = u.user_id (tidak perlu)
             WHERE $where_clause
-            ORDER BY sd.tahun DESC, sd.created_at DESC
-            LIMIT 20";
-
+            ORDER BY sd.tahun DESC, sd.created_at DESC";
+    
     $stmt = $conn->prepare($sql);
     
-    if (!$stmt) {
-        sendResponse(false, "Query preparation failed: " . $conn->error);
-        return;
-    }
-
-    // Bind parameters if any
     if (!empty($params)) {
         $stmt->bind_param($types, ...$params);
     }
-
-    if (!$stmt->execute()) {
-        sendResponse(false, "Execute failed: " . $stmt->error);
-        $stmt->close();
-        return;
-    }
-
+    
+    $stmt->execute();
     $result = $stmt->get_result();
+    
     $shuData = [];
+    $totalShu60 = 0;
+    $totalShu10 = 0;
+    $totalShu30 = 0;
+    $totalAllShu = 0;
     
     while ($r = $result->fetch_assoc()) {
         $shuData[] = [
             'shu_id' => (int)$r['shu_id'],
             'anggota_id' => (int)$r['anggota_id'],
             'tahun' => $r['tahun'],
-            'nama_anggota' => $r['nama_anggota'],
+            'nama_anggota' => $r['nama_anggota'],  // ✅ Sekarang dapat nama_lengkap dari anggota
             'shu_60_percent' => (float)$r['shu_60_percent'],
             'shu_10_percent' => (float)$r['shu_10_percent'],
             'shu_30_percent' => (float)$r['shu_30_percent'],
             'total_shu' => (float)$r['total_shu'],
             'created_at' => $r['created_at']
         ];
+        
+        // Hitung total untuk summary
+        $totalShu60 += (float)$r['shu_60_percent'];
+        $totalShu10 += (float)$r['shu_10_percent'];
+        $totalShu30 += (float)$r['shu_30_percent'];
+        $totalAllShu += (float)$r['total_shu'];
     }
     
     $stmt->close();
 
-    // Jika tidak ada data, kembalikan array kosong dengan summary
-    if (empty($shuData)) {
-        sendResponse(true, [
-            "data" => [],
-            "summary" => [
-                "totalShu" => 0,
-                "totalDistribusi" => 0,
-                "tahunAktif" => date('Y'),
-                "summaryByYear" => []
-            ]
-        ]);
-        return;
-    }
-
-    // Hitung summary data
-    $summary = self::calculateShuSummary($shuData);
+    // Summary data
+    $summary = [
+        'totalShu60' => $totalShu60,
+        'totalShu10' => $totalShu10,
+        'totalShu30' => $totalShu30,
+        'totalAllShu' => $totalAllShu,
+        'totalDistribusi' => count($shuData),
+        'tahunAktif' => $tahun ?: 'Semua Tahun'
+    ];
 
     sendResponse(true, [
         "data" => $shuData,
@@ -652,44 +573,80 @@ public static function getShuDistribusi($conn) {
     ]);
 }
 
-private static function calculateShuSummary($shuData) {
-    $totalShu = 0;
-    $totalDistribusi = count($shuData);
-    $summaryByYear = [];
-    $tahunAktif = date('Y');
+private static function calculateShuSummary($conn, $tahun = '', $anggota_id = '') {
+    // Build WHERE clause
+    $where_conditions = ["1=1"];
+    $params = [];
+    $types = '';
 
-    foreach ($shuData as $item) {
-        $totalShu += $item['total_shu'];
-        
-        $tahun = $item['tahun'];
-        if (!isset($summaryByYear[$tahun])) {
-            $summaryByYear[$tahun] = [
-                'tahun' => $tahun,
-                'total_60' => 0,
-                'total_10' => 0,
-                'total_30' => 0,
-                'total_all' => 0,
-                'jumlah_anggota' => 0
-            ];
-        }
-        
-        $summaryByYear[$tahun]['total_60'] += $item['shu_60_percent'];
-        $summaryByYear[$tahun]['total_10'] += $item['shu_10_percent'];
-        $summaryByYear[$tahun]['total_30'] += $item['shu_30_percent'];
-        $summaryByYear[$tahun]['total_all'] += $item['total_shu'];
-        $summaryByYear[$tahun]['jumlah_anggota'] += 1;
-
-        // Update tahun aktif (tahun terbaru)
-        if ($tahun > $tahunAktif) {
-            $tahunAktif = $tahun;
-        }
+    if (!empty($tahun) && $tahun !== 'all') {
+        $where_conditions[] = "sd.tahun = ?";
+        $params[] = $tahun;
+        $types .= 's';
     }
 
+    if (!empty($anggota_id) && $anggota_id !== 'all') {
+        $where_conditions[] = "sd.anggota_id = ?";
+        $params[] = $anggota_id;
+        $types .= 'i';
+    }
+
+    $where_clause = implode(' AND ', $where_conditions);
+
+    // Query untuk summary (hanya hitung shu_60_percent)
+    $sql = "SELECT 
+                sd.tahun,
+                COUNT(*) as jumlah_anggota,
+                SUM(COALESCE(sd.shu_60_percent, 0)) as total_60,
+                SUM(COALESCE(sd.shu_10_percent, 0)) as total_10,
+                SUM(COALESCE(sd.shu_30_percent, 0)) as total_30,
+                SUM(COALESCE(sd.shu_60_percent, 0)) as total_all  -- HANYA shu_60_percent yang dijumlah
+            FROM shu_distribusi sd
+            JOIN anggota a ON sd.anggota_id = a.anggota_id
+            JOIN users u ON a.user_id = u.user_id
+            WHERE $where_clause
+            GROUP BY sd.tahun
+            ORDER BY sd.tahun DESC";
+
+    $stmt = $conn->prepare($sql);
+    
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    $summaryByYear = [];
+    $totalShu = 0;
+    $totalDistribusi = 0;
+    $tahunAktif = date('Y');
+
+    while ($r = $result->fetch_assoc()) {
+        $summaryByYear[] = [
+            'tahun' => $r['tahun'],
+            'total_60' => (float)$r['total_60'],
+            'total_10' => (float)$r['total_10'],
+            'total_30' => (float)$r['total_30'],
+            'total_all' => (float)$r['total_all'], // Hanya SHU 60%
+            'jumlah_anggota' => (int)$r['jumlah_anggota']
+        ];
+        
+        $totalShu += (float)$r['total_all']; // Hanya SHU 60%
+        $totalDistribusi += (int)$r['jumlah_anggota'];
+        
+        if ($r['tahun'] > $tahunAktif) {
+            $tahunAktif = $r['tahun'];
+        }
+    }
+    
+    $stmt->close();
+
     return [
-        'totalShu' => $totalShu,
+        'totalShu' => $totalShu, // Hanya SHU 60%
         'totalDistribusi' => $totalDistribusi,
         'tahunAktif' => $tahunAktif,
-        'summaryByYear' => array_values($summaryByYear)
+        'summaryByYear' => $summaryByYear
     ];
 }
 

@@ -574,7 +574,7 @@ export default function DashboardAdmin({ user }) {
               </Link>
 
               <Link
-                to="/shu"
+                to="/shu-management"
                 className="bg-gradient-to-br from-amber-600 to-amber-700 text-white p-3 sm:p-4 rounded-xl shadow-md hover:from-amber-500 hover:to-amber-600 transition-all transform hover:-translate-y-0.5 active:translate-y-0 text-center border border-amber-500"
               >
                 <div className="flex flex-col items-center">
