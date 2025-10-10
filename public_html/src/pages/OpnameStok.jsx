@@ -134,7 +134,7 @@ export default function OpnameStok() {
     return true;
   };
 
-  // Submit opname
+  // Submit opname - PERBAIKAN: Menggunakan createSerahTerima bukan getSerahTerima
   const submitOpname = async () => {
     if (!selectedKasirTo) {
       setError("Pilih kasir penerima terlebih dahulu");
@@ -184,7 +184,12 @@ export default function OpnameStok() {
         hasil_opname: hasil_opname,
       };
 
-      const res = await api("getSerahTerima", "POST", payload);
+      console.log("Sending payload to createSerahTerima:", payload);
+
+      // PERBAIKAN PENTING: Ganti dari getSerahTerima ke createSerahTerima
+      const res = await api("createSerahTerima", "POST", payload);
+
+      console.log("API Response:", res);
 
       if (res?.success) {
         setSuccess("Opname berhasil disimpan dan dikirim ke kasir penerima!");
@@ -201,7 +206,8 @@ export default function OpnameStok() {
         throw new Error(res?.error || "Gagal menyimpan opname");
       }
     } catch (err) {
-      setError(err.message);
+      console.error("Error in submitOpname:", err);
+      setError(err.message || "Terjadi kesalahan saat menyimpan data");
     } finally {
       setSubmitting(false);
     }
@@ -398,8 +404,11 @@ export default function OpnameStok() {
                           <th className="px-3 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                             Barang
                           </th>
-                          <th className="px-3 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-slate-300 uppercase tracking-wider">
-                            Stok Input
+                          <th className="px-3 sm:px-4 py-2 sm:py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">
+                            Stok Sistem
+                          </th>
+                          <th className="px-3 sm:px-4 py-2 sm:py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">
+                            Stok Fisik
                           </th>
                         </tr>
                       </thead>
@@ -417,12 +426,12 @@ export default function OpnameStok() {
                                 ID: {item.barang_id}
                               </div>
                             </td>
-                            <td className="px-3 sm:px-4 py-2 sm:py-3 whitespace-nowrap text-right">
+                            <td className="px-3 sm:px-4 py-2 sm:py-3 whitespace-nowrap text-center">
                               <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-900/50 text-blue-300 border border-blue-500/30">
                                 {item.stok} pcs
                               </span>
                             </td>
-                            <td className="px-3 sm:px-4 py-2 sm:py-3 whitespace-nowrap text-right">
+                            <td className="px-3 sm:px-4 py-2 sm:py-3 whitespace-nowrap text-center">
                               <input
                                 type="number"
                                 value={item.stok_input}
@@ -432,7 +441,7 @@ export default function OpnameStok() {
                                     e.target.value
                                   )
                                 }
-                                className="bg-slate-900/60 border border-slate-600/40 rounded-lg px-3 py-2 text-white text-sm w-24 text-right focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                className="bg-slate-900/60 border border-slate-600/40 rounded-lg px-3 py-2 text-white text-sm w-24 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                                 placeholder="0"
                                 min="0"
                               />
@@ -460,20 +469,30 @@ export default function OpnameStok() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-400">
-                            Stok Input:
-                          </span>
-                          <input
-                            type="number"
-                            value={item.stok_input}
-                            onChange={(e) =>
-                              updateStokInput(item.barang_id, e.target.value)
-                            }
-                            className="bg-slate-900/60 border border-slate-600/40 rounded-lg px-3 py-2 text-white text-sm w-20 text-right focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            placeholder="0"
-                            min="0"
-                          />
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">
+                              Stok Sistem:
+                            </span>
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-900/50 text-blue-300 border border-blue-500/30">
+                              {item.stok} pcs
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">
+                              Stok Fisik:
+                            </span>
+                            <input
+                              type="number"
+                              value={item.stok_input}
+                              onChange={(e) =>
+                                updateStokInput(item.barang_id, e.target.value)
+                              }
+                              className="bg-slate-900/60 border border-slate-600/40 rounded-lg px-3 py-2 text-white text-sm w-20 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              placeholder="0"
+                              min="0"
+                            />
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -529,7 +548,7 @@ export default function OpnameStok() {
                   >
                     <span className="text-sm truncate">
                       {selectedKasir
-                        ? `${selectedKasir.nama_lengkap} - ${selectedKasir.username}`
+                        ? `${selectedKasir.username}`
                         : "Pilih Kasir Penerima"}
                     </span>
                     <span className="text-slate-400 transform transition-transform text-xs flex-shrink-0">
@@ -550,10 +569,10 @@ export default function OpnameStok() {
                           className="w-full px-3 py-2 text-sm text-white text-left hover:bg-slate-700/60 transition-colors first:rounded-t-xl last:rounded-b-xl border-b border-slate-600/40 last:border-b-0"
                         >
                           <div className="font-medium">
-                            {kasir.nama_lengkap}
+                            {kasir.username}
                           </div>
                           <div className="text-xs text-slate-400">
-                            {kasir.username}
+                            ID: {kasir.user_id}
                           </div>
                         </button>
                       ))}

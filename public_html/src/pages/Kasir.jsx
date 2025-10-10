@@ -1,4 +1,4 @@
-// src/pages/Kasir.jsx - UI/UX IMPROVED WITH MOBILE COMPATIBLE NOTIFICATIONS
+// src/pages/Kasir.jsx - FIXED VERSION (Sound only for new orders)
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../utils/api";
@@ -21,6 +21,8 @@ const NotificationPopup = ({ message, type = "info", onClose }) => {
         return "⚠️";
       case "error":
         return "❌";
+      case "new_order":
+        return "🆕";
       default:
         return "ℹ️";
     }
@@ -34,6 +36,8 @@ const NotificationPopup = ({ message, type = "info", onClose }) => {
         return "bg-orange-900/80 border-orange-500/50";
       case "error":
         return "bg-red-900/80 border-red-500/50";
+      case "new_order":
+        return "bg-purple-900/80 border-purple-500/50";
       default:
         return "bg-blue-900/80 border-blue-500/50";
     }
@@ -59,52 +63,47 @@ const NotificationPopup = ({ message, type = "info", onClose }) => {
   );
 };
 
-// Utility untuk memutar suara (MOBILE COMPATIBLE)
+// Utility untuk memutar suara - SIMPLIFIED VERSION
 const useAudio = () => {
-  const [audioContext, setAudioContext] = useState(null);
   const [isAudioReady, setIsAudioReady] = useState(false);
+  const audioContextRef = useRef(null);
 
   useEffect(() => {
     const initAudio = async () => {
       try {
-        // Cek browser support
-        const AudioContextClass =
-          window.AudioContext || window.webkitAudioContext;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) {
           console.log("Web Audio API tidak didukung di browser ini");
           return;
         }
 
         const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
 
-        // Untuk mobile, audio context biasanya dalam state 'suspended'
-        // dan perlu di-resume setelah user interaction
+        // Untuk mobile, tunggu interaksi pengguna dulu
         if (ctx.state === "suspended") {
-          // Function untuk resume audio context
-          const resumeAudio = async () => {
+          const handleUserInteraction = async () => {
             try {
               await ctx.resume();
               console.log("Audio context di-resume");
               setIsAudioReady(true);
-
+              
               // Hapus event listeners setelah berhasil resume
-              document.removeEventListener("click", resumeAudio);
-              document.removeEventListener("touchstart", resumeAudio);
-              document.removeEventListener("keydown", resumeAudio);
+              document.removeEventListener("click", handleUserInteraction);
+              document.removeEventListener("touchstart", handleUserInteraction);
+              document.removeEventListener("keydown", handleUserInteraction);
             } catch (error) {
               console.log("Gagal resume audio context:", error);
             }
           };
 
-          // Tambah event listeners untuk user interaction
-          document.addEventListener("click", resumeAudio);
-          document.addEventListener("touchstart", resumeAudio);
-          document.addEventListener("keydown", resumeAudio);
+          // Tambah event listeners
+          document.addEventListener("click", handleUserInteraction);
+          document.addEventListener("touchstart", handleUserInteraction);
+          document.addEventListener("keydown", handleUserInteraction);
         } else {
           setIsAudioReady(true);
         }
-
-        setAudioContext(ctx);
       } catch (error) {
         console.log("Error initializing audio context:", error);
       }
@@ -112,118 +111,63 @@ const useAudio = () => {
 
     initAudio();
 
-    // Cleanup
     return () => {
-      if (audioContext) {
-        audioContext.close();
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
       }
     };
   }, []);
 
-  const playSound = useCallback(
-    (type = "new_order") => {
-      if (!audioContext || !isAudioReady) {
-        console.log("Audio context belum ready");
-        return;
+  const playNewOrderSound = useCallback(() => {
+    if (!audioContextRef.current || !isAudioReady) {
+      console.log("Audio belum ready, notifikasi tanpa suara");
+      return;
+    }
+
+    try {
+      const ctx = audioContextRef.current;
+      
+      // Pastikan audio context aktif
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(console.error);
+        return; // Skip jika masih suspended
       }
 
-      try {
-        // Pastikan audio context aktif
-        if (audioContext.state === "suspended") {
-          audioContext.resume();
-        }
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
 
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
 
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+      // Suara khusus untuk pesanan baru - lebih menarik
+      const now = ctx.currentTime;
+      
+      // Pattern: naik-turun-naik (lebih attention-grabbing)
+      oscillator.frequency.setValueAtTime(800, now);
+      oscillator.frequency.setValueAtTime(400, now + 0.1);
+      oscillator.frequency.setValueAtTime(1000, now + 0.2);
+      oscillator.frequency.setValueAtTime(600, now + 0.3);
+      
+      // Envelope volume
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(0.3, now + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
 
-        // Konfigurasi suara berdasarkan jenis notifikasi
-        switch (type) {
-          case "new_order":
-            // Suara notifikasi pesanan baru (ringtone sederhana)
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.setValueAtTime(
-              600,
-              audioContext.currentTime + 0.1
-            );
-            oscillator.frequency.setValueAtTime(
-              800,
-              audioContext.currentTime + 0.2
-            );
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(
-              0.01,
-              audioContext.currentTime + 0.5
-            );
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.5);
-            break;
+      oscillator.start(now);
+      oscillator.stop(now + 0.4);
 
-          case "success":
-            // Suara sukses (naik nada)
-            oscillator.frequency.setValueAtTime(
-              523.25,
-              audioContext.currentTime
-            ); // C5
-            oscillator.frequency.setValueAtTime(
-              659.25,
-              audioContext.currentTime + 0.1
-            ); // E5
-            oscillator.frequency.setValueAtTime(
-              783.99,
-              audioContext.currentTime + 0.2
-            ); // G5
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(
-              0.01,
-              audioContext.currentTime + 0.4
-            );
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.4);
-            break;
+      // Cleanup
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gainNode.disconnect();
+      };
 
-          case "error":
-            // Suara error (turun nada)
-            oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
-            oscillator.frequency.setValueAtTime(
-              400,
-              audioContext.currentTime + 0.1
-            );
-            oscillator.frequency.setValueAtTime(
-              300,
-              audioContext.currentTime + 0.2
-            );
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(
-              0.01,
-              audioContext.currentTime + 0.4
-            );
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.4);
-            break;
+    } catch (error) {
+      console.log("Error playing new order sound:", error);
+    }
+  }, [isAudioReady]);
 
-          default:
-            // Suara default
-            oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
-            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(
-              0.01,
-              audioContext.currentTime + 0.3
-            );
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-            break;
-        }
-      } catch (error) {
-        console.log("Error playing sound:", error);
-      }
-    },
-    [audioContext, isAudioReady]
-  );
-
-  return { playSound, isAudioReady };
+  return { playNewOrderSound, isAudioReady };
 };
 
 export default function Kasir({ user }) {
@@ -241,20 +185,20 @@ export default function Kasir({ user }) {
     hutangBelumLunas: 0,
     stokMenipis: 0,
   });
+  
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [recentTransactions, setRecentTransactions] = useState([]);
-
-  // State untuk notifikasi
   const [notifications, setNotifications] = useState([]);
 
-  // Custom hook untuk audio
-  const { playSound, isAudioReady } = useAudio();
+  // Custom hook untuk audio - HANYA untuk pesanan baru
+  const { playNewOrderSound, isAudioReady } = useAudio();
 
-  // Refs untuk mencegah race condition
+  // Refs untuk mencegah race condition dan duplikasi notifikasi
   const isMountedRef = useRef(true);
   const cartRef = useRef(cart);
   const ordersRef = useRef([]);
   const transactionsRef = useRef([]);
+  const knownOrderIds = useRef(new Set()); // Track semua pesanan yang pernah diketahui
 
   // Update ref ketika data berubah
   useEffect(() => {
@@ -263,20 +207,15 @@ export default function Kasir({ user }) {
     transactionsRef.current = recentTransactions;
   }, [cart, orders, recentTransactions]);
 
-  const addNotification = useCallback(
-    (message, type = "info") => {
-      const id = Date.now() + Math.random();
-      setNotifications((prev) => [...prev, { id, message, type }]);
+  const addNotification = useCallback((message, type = "info", playSound = false) => {
+    const id = Date.now() + Math.random();
+    setNotifications((prev) => [...prev, { id, message, type }]);
 
-      // Putar suara berdasarkan jenis notifikasi
-      if (isAudioReady) {
-        playSound(type);
-      } else {
-        console.log("Audio belum ready, notifikasi tanpa suara");
-      }
-    },
-    [playSound, isAudioReady]
-  );
+    // Hanya putar suara jika specifically diminta (untuk pesanan baru)
+    if (playSound && type === "new_order") {
+      playNewOrderSound();
+    }
+  }, [playNewOrderSound]);
 
   const removeNotification = useCallback((id) => {
     setNotifications((prev) => prev.filter((notif) => notif.id !== id));
@@ -299,168 +238,176 @@ export default function Kasir({ user }) {
     []
   );
 
-  const checkForNewOrders = useCallback(
-    (newOrders, oldOrders) => {
-      if (newOrders.length > oldOrders.length) {
-        const newCount = newOrders.length - oldOrders.length;
-        if (newCount > 0) {
-          addNotification(`${newCount} pesanan baru masuk!`, "new_order");
-        }
+  // Fungsi untuk mendeteksi pesanan baru - IMPROVED
+  const checkForNewOrders = useCallback((newOrders, oldOrders) => {
+    if (!oldOrders.length) {
+      // Inisialisasi: tambahkan semua order pertama ke known orders
+      newOrders.forEach(order => {
+        knownOrderIds.current.add(order.transaksi_id);
+      });
+      return;
+    }
+
+    // Cari pesanan yang benar-benar baru (belum pernah diketahui sama sekali)
+    const trulyNewOrders = newOrders.filter(order => 
+      !knownOrderIds.current.has(order.transaksi_id)
+    );
+
+    if (trulyNewOrders.length > 0) {
+      // Tampilkan notifikasi dengan suara HANYA untuk pesanan baru
+      addNotification(
+        `${trulyNewOrders.length} pesanan baru masuk dari ${trulyNewOrders[0].nama_anggota}${trulyNewOrders.length > 1 ? ` dan ${trulyNewOrders.length - 1} lainnya` : ''}`,
+        "new_order",
+        true // Play sound hanya untuk notifikasi ini
+      );
+      
+      // Tandai pesanan ini sebagai sudah diketahui
+      trulyNewOrders.forEach(order => {
+        knownOrderIds.current.add(order.transaksi_id);
+      });
+    }
+
+    // Update known orders dengan semua order yang sekarang ada
+    newOrders.forEach(order => {
+      knownOrderIds.current.add(order.transaksi_id);
+    });
+  }, [addNotification]);
+
+  // Fungsi untuk mendeteksi transaksi baru - TANPA SUARA
+  const checkForNewTransactions = useCallback((newTransactions, oldTransactions) => {
+    if (!oldTransactions.length) return;
+
+    const oldTransactionIds = new Set(oldTransactions.map(t => t.id));
+    const newTransactionsCount = newTransactions.filter(t => !oldTransactionIds.has(t.id)).length;
+
+    if (newTransactionsCount > 0) {
+      addNotification(`${newTransactionsCount} transaksi baru diproses`, "info", false); // NO SOUND
+    }
+  }, [addNotification]);
+
+  const loadData = useCallback(async (silent = false) => {
+    if (!user || !isMountedRef.current) return;
+
+    try {
+      if (!silent) {
+        setIsLoading(true);
       }
-    },
-    [addNotification]
-  );
 
-  const checkForNewTransactions = useCallback(
-    (newTransactions, oldTransactions) => {
-      if (newTransactions.length > oldTransactions.length) {
-        const newCount = newTransactions.length - oldTransactions.length;
-        if (newCount > 0) {
-          addNotification(`${newCount} transaksi baru diproses`, "info");
-        }
+      const pesananRes = await api("getPesananAnggota");
+
+      if (isMountedRef.current && pesananRes?.success) {
+        const data = Array.isArray(pesananRes.data) 
+          ? pesananRes.data.map(normalizePesanan)
+          : [];
+
+        // Selalu cek pesanan baru, bahkan pada silent refresh
+        checkForNewOrders(data, ordersRef.current);
+
+        setOrders(data);
       }
-    },
-    [addNotification]
-  );
+    } catch (err) {
+      console.error("Error loading orders:", err);
+      if (isMountedRef.current) {
+        setOrders([]);
+      }
+    } finally {
+      if (isMountedRef.current && !silent) {
+        setIsLoading(false);
+      }
+    }
+  }, [user, normalizePesanan, checkForNewOrders]);
 
-  const loadData = useCallback(
-    async (silent = false) => {
-      if (!user || !isMountedRef.current) return;
+  const loadDashboardData = useCallback(async (silent = false) => {
+    if (!isMountedRef.current) return;
 
-      try {
-        if (!silent) {
-          setIsLoading(true);
-        }
+    try {
+      if (!silent) {
+        setDashboardLoading(true);
+      }
+      setError("");
 
-        const pesananRes = await api("getPesananAnggota");
+      const [statsRes, transactionsRes] = await Promise.all([
+        api("getDashboardKasir", "GET"),
+        api("getTransaksiTerbaru", "GET")
+      ]);
 
-        if (isMountedRef.current) {
-          const data =
-            pesananRes?.success && Array.isArray(pesananRes.data)
-              ? pesananRes.data.map(normalizePesanan)
-              : [];
+      if (isMountedRef.current) {
+        // Process stats
+        if (statsRes?.success) {
+          let dashboardData = statsRes.data;
 
-          // Cek pesanan baru
-          if (!silent) {
-            checkForNewOrders(data, ordersRef.current);
+          if (dashboardData && typeof dashboardData === "object") {
+            setStats({
+              totalPenjualanHariIni: dashboardData.totalPenjualanHariIni || 0,
+              totalTransaksiHariIni: dashboardData.totalTransaksiHariIni || 0,
+              hutangBelumLunas: dashboardData.hutangBelumLunas || 0,
+              stokMenipis: dashboardData.stokMenipis || 0,
+            });
+          } else if (statsRes.data && statsRes.data.data) {
+            setStats({
+              totalPenjualanHariIni: statsRes.data.data.totalPenjualanHariIni || 0,
+              totalTransaksiHariIni: statsRes.data.data.totalTransaksiHariIni || 0,
+              hutangBelumLunas: statsRes.data.data.hutangBelumLunas || 0,
+              stokMenipis: statsRes.data.data.stokMenipis || 0,
+            });
           }
-
-          setOrders(data);
-        }
-      } catch (err) {
-        console.error("Error loading orders:", err);
-        if (isMountedRef.current) {
-          setOrders([]);
-        }
-      } finally {
-        if (isMountedRef.current && !silent) {
-          setIsLoading(false);
-        }
-      }
-    },
-    [user, normalizePesanan, checkForNewOrders]
-  );
-
-  const loadDashboardData = useCallback(
-    async (silent = false) => {
-      if (!isMountedRef.current) return;
-
-      try {
-        if (!silent) {
-          setDashboardLoading(true);
-        }
-        setError("");
-
-        const statsRes = await api("getDashboardKasir", "GET");
-
-        if (isMountedRef.current) {
-          if (statsRes?.success) {
-            let dashboardData = statsRes.data;
-
-            if (dashboardData && typeof dashboardData === "object") {
-              setStats({
-                totalPenjualanHariIni: dashboardData.totalPenjualanHariIni || 0,
-                totalTransaksiHariIni: dashboardData.totalTransaksiHariIni || 0,
-                hutangBelumLunas: dashboardData.hutangBelumLunas || 0,
-                stokMenipis: dashboardData.stokMenipis || 0,
-              });
-            } else if (statsRes.data && statsRes.data.data) {
-              setStats({
-                totalPenjualanHariIni:
-                  statsRes.data.data.totalPenjualanHariIni || 0,
-                totalTransaksiHariIni:
-                  statsRes.data.data.totalTransaksiHariIni || 0,
-                hutangBelumLunas: statsRes.data.data.hutangBelumLunas || 0,
-                stokMenipis: statsRes.data.data.stokMenipis || 0,
-              });
-            }
-          } else {
-            setError(statsRes?.error || "Gagal memuat data statistik");
-          }
+        } else {
+          setError(statsRes?.error || "Gagal memuat data statistik");
         }
 
-        const transactionsRes = await api("getTransaksiTerbaru", "GET");
-
-        if (isMountedRef.current && transactionsRes?.success) {
+        // Process transactions
+        if (transactionsRes?.success) {
           let transactionsData = transactionsRes.data;
 
           if (Array.isArray(transactionsData)) {
-            // Cek transaksi baru
-            if (!silent) {
-              checkForNewTransactions(
-                transactionsData,
-                transactionsRef.current
-              );
+            if (!silent || transactionsRef.current.length > 0) {
+              checkForNewTransactions(transactionsData, transactionsRef.current);
             }
             setRecentTransactions(transactionsData);
-          } else if (
-            transactionsRes.data &&
-            Array.isArray(transactionsRes.data.data)
-          ) {
+          } else if (transactionsRes.data && Array.isArray(transactionsRes.data.data)) {
             const dataArray = transactionsRes.data.data;
-            // Cek transaksi baru
-            if (!silent) {
+            if (!silent || transactionsRef.current.length > 0) {
               checkForNewTransactions(dataArray, transactionsRef.current);
             }
             setRecentTransactions(dataArray);
           }
         }
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-        if (isMountedRef.current) {
-          setError("Terjadi kesalahan saat memuat data dashboard");
-        }
-      } finally {
-        if (isMountedRef.current) {
-          if (!silent) {
-            setDashboardLoading(false);
-          }
-          setLastUpdate(new Date());
-        }
       }
-    },
-    [checkForNewTransactions]
-  );
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+      if (isMountedRef.current) {
+        setError("Terjadi kesalahan saat memuat data dashboard");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        if (!silent) {
+          setDashboardLoading(false);
+        }
+        setLastUpdate(new Date());
+      }
+    }
+  }, [checkForNewTransactions]);
 
   // Initial load
   useEffect(() => {
     isMountedRef.current = true;
 
     const initializeData = async () => {
-      await Promise.all([loadData(), loadDashboardData()]);
+      if (user) {
+        await loadData();
+        await loadDashboardData();
+      }
     };
 
-    if (user) {
-      initializeData();
-    }
+    initializeData();
 
-    // Auto-refresh hanya untuk data orders (lebih ringan)
+    // Auto-refresh
     const interval = setInterval(() => {
       if (isMountedRef.current && user) {
-        loadData(true); // silent refresh untuk orders
-        loadDashboardData(true); // silent refresh untuk dashboard
+        loadData(true);
+        loadDashboardData(true);
       }
-    }, 10000); // Naikkan jadi 10 detik untuk mengurangi flicker
+    }, 10000);
 
     return () => {
       isMountedRef.current = false;
@@ -468,34 +415,32 @@ export default function Kasir({ user }) {
     };
   }, [user, loadData, loadDashboardData]);
 
-  const tambahKeCart = useCallback(
-    (transaksi) => {
-      const existingInCart = cartRef.current.some(
-        (c) => c.transaksi_id === transaksi.transaksi_id
-      );
-      if (existingInCart) {
-        setError("Transaksi ini sudah ada di keranjang!");
-        return;
-      }
+  const tambahKeCart = useCallback((transaksi) => {
+    const existingInCart = cartRef.current.some(
+      (c) => c.transaksi_id === transaksi.transaksi_id
+    );
+    if (existingInCart) {
+      setError("Transaksi ini sudah ada di keranjang!");
+      return;
+    }
 
-      const cartItems = transaksi.items.map((item) => ({
-        ...item,
-        transaksi_id: Number(transaksi.transaksi_id),
-        anggota_id: transaksi.anggota_id,
-        nama_anggota: transaksi.nama_anggota,
-        metode_pembayaran: transaksi.metode_pembayaran,
-        total_harga: transaksi.total_harga,
-      }));
+    const cartItems = transaksi.items.map((item) => ({
+      ...item,
+      transaksi_id: Number(transaksi.transaksi_id),
+      anggota_id: transaksi.anggota_id,
+      nama_anggota: transaksi.nama_anggota,
+      metode_pembayaran: transaksi.metode_pembayaran,
+      total_harga: transaksi.total_harga,
+    }));
 
-      setCart((prev) => [...prev, ...cartItems]);
-      setError(null);
-      addNotification(
-        `Pesanan dari ${transaksi.nama_anggota} ditambahkan ke proses`,
-        "info"
-      );
-    },
-    [addNotification]
-  );
+    setCart((prev) => [...prev, ...cartItems]);
+    setError(null);
+    addNotification(
+      `Pesanan dari ${transaksi.nama_anggota} ditambahkan ke proses`,
+      "info",
+      false // NO SOUND
+    );
+  }, [addNotification]);
 
   const updateCartItem = useCallback((id, transaksi_id, jumlah) => {
     if (jumlah < 1) {
@@ -566,7 +511,7 @@ export default function Kasir({ user }) {
       if (res && res.success) {
         const successMsg = `Transaksi berhasil diselesaikan! ${res.processed_count} transaksi diproses.`;
         setSuccessMessage(successMsg);
-        addNotification(successMsg, "success");
+        addNotification(successMsg, "success", false);
         setCart([]);
         setError(null);
 
@@ -586,7 +531,7 @@ export default function Kasir({ user }) {
       console.error("Error:", err);
       const errorMsg = "Terjadi kesalahan saat menyelesaikan transaksi.";
       setError(errorMsg);
-      addNotification(errorMsg, "error");
+      addNotification(errorMsg, "error", false);
     } finally {
       setProcessing(false);
     }
@@ -698,8 +643,7 @@ export default function Kasir({ user }) {
               Dashboard Kasir
             </h1>
             <p className="text-slate-400 mt-1 text-sm sm:text-base">
-              Selamat datang, {user?.username || "Kasir"}! Kelola transaksi
-              dengan mudah
+              Selamat datang, {user?.username || "Kasir"}! Kelola transaksi dengan mudah
             </p>
           </div>
           <div className="flex items-center gap-3">
