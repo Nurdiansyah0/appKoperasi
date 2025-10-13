@@ -1,8 +1,8 @@
 <?php
-$servername = "localhost";
-$username   = "koperasi_user";
-$password   = "Ma2syndicate";          
-$dbname     = "koperasi_db"; 
+$servername = "";
+$username   = "";
+$password   = "";          
+$dbname     = ""; 
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
