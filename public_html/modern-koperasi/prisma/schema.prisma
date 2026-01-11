@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model anggota {
+  anggota_id        Int                 @id @default(autoincrement())
+  user_id           Int?                @unique
+  nama_lengkap      String?             @db.VarChar(100)
+  email             String?             @db.VarChar(100)
+  saldo             Decimal?            @default(0.00) @db.Decimal(15, 2)
+  hutang            Decimal?            @default(0.00) @db.Decimal(15, 2)
+  shu               Decimal?            @default(0.00) @db.Decimal(15, 2)
+  created_at        DateTime            @default(now()) @db.Timestamp(0)
+  pembayaran_hutang pembayaran_hutang[]
+  shu_distribusi    shu_distribusi[]
+  transaksi         transaksi[]
+  user              users?              @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "anggota_ibfk_1")
+  tarik_tunai       tarik_tunai[]
+  topup_request     topup_request[]
+
+  @@index([user_id], map: "user_id")
+}
+
+model barang {
+  barang_id   Int      @id @default(autoincrement())
+  nama_barang String?  @db.VarChar(100)
+  stok        Int?     @default(0)
+  harga_modal Decimal? @db.Decimal(15, 2)
+  harga_jual  Decimal? @db.Decimal(15, 2)
+  keuntungan  Decimal? @db.Decimal(15, 2)
+  updated_at  DateTime @default(now()) @db.Timestamp(0)
+  transaksi_detail transaksi_detail[]
+}
+
+model pembayaran_hutang {
+  pembayaran_id Int                       @id @default(autoincrement())
+  anggota_id    Int?
+  kasir_id      Int?
+  nominal       Decimal?                  @db.Decimal(15, 2)
+  status        pembayaran_hutang_status? @default(pending)
+  approved_at   DateTime?                 @db.Timestamp(0)
+  created_at    DateTime                  @default(now()) @db.Timestamp(0)
+  anggota       anggota?                  @relation(fields: [anggota_id], references: [anggota_id], onDelete: NoAction, onUpdate: NoAction, map: "pembayaran_hutang_ibfk_1")
+  users         users?                    @relation(fields: [kasir_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "pembayaran_hutang_ibfk_2")
+
+  @@index([anggota_id], map: "anggota_id")
+  @@index([kasir_id], map: "kasir_id")
+}
+
+model serah_terima_kasir {
+  serah_id                                   Int                        @id @default(autoincrement())
+  kasir_from                                 Int?
+  kasir_to                                   Int?
+  hasil_opname                               String?                    @db.LongText
+  status                                     serah_terima_kasir_status? @default(pending)
+  alasan_penolakan                           String?                    @db.VarChar(225)
+  created_at                                 DateTime                   @default(now()) @db.Timestamp(0)
+  updated_at                                 DateTime                   @default(now()) @db.Timestamp(0)
+  users_serah_terima_kasir_kasir_fromTousers users?                     @relation("serah_terima_kasir_kasir_fromTousers", fields: [kasir_from], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "serah_terima_kasir_ibfk_1")
+  users_serah_terima_kasir_kasir_toTousers   users?                     @relation("serah_terima_kasir_kasir_toTousers", fields: [kasir_to], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "serah_terima_kasir_ibfk_2")
+
+  @@index([kasir_from], map: "kasir_from")
+  @@index([kasir_to], map: "kasir_to")
+}
+
+model shu_distribusi {
+  shu_id         Int      @id @default(autoincrement())
+  anggota_id     Int?
+  tahun          Int?     @db.Year
+  shu_60_percent Decimal? @db.Decimal(15, 2)
+  shu_10_percent Decimal? @db.Decimal(15, 2)
+  shu_30_percent Decimal? @db.Decimal(15, 2)
+  created_at     DateTime @default(now()) @db.Timestamp(0)
+  anggota        anggota? @relation(fields: [anggota_id], references: [anggota_id], onDelete: NoAction, onUpdate: NoAction, map: "shu_distribusi_ibfk_1")
+
+  @@index([anggota_id], map: "idx_shu_anggota")
+}
+
+model transaksi {
+  transaksi_id      Int                          @id @default(autoincrement())
+  anggota_id        Int?
+  kasir_id          Int?
+  total_harga       Decimal?                     @db.Decimal(15, 2)
+  total_keuntungan  Decimal?                     @db.Decimal(15, 2)
+  metode_pembayaran transaksi_metode_pembayaran?
+  status            transaksi_status?            @default(pending)
+  created_at        DateTime                     @default(now()) @db.Timestamp(0)
+  anggota           anggota?                     @relation(fields: [anggota_id], references: [anggota_id], onDelete: NoAction, onUpdate: NoAction, map: "transaksi_ibfk_1")
+  users             users?                       @relation(fields: [kasir_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "transaksi_ibfk_2")
+
+  @@index([anggota_id], map: "idx_transaksi_anggota")
+  @@index([kasir_id], map: "idx_transaksi_kasir")
+  transaksi_detail transaksi_detail[]
+}
+
+model transaksi_detail {
+  detail_id    Int      @id @default(autoincrement())
+  transaksi_id Int?
+  barang_id    Int?
+  jumlah       Int?
+  harga_satuan Decimal? @db.Decimal(15, 2)
+  subtotal     Decimal? @db.Decimal(15, 2)
+  keuntungan   Decimal? @db.Decimal(15, 2)
+  transaksi    transaksi? @relation(fields: [transaksi_id], references: [transaksi_id], onDelete: NoAction, onUpdate: NoAction, map: "transaksi_detail_ibfk_1")
+  barang       barang?    @relation(fields: [barang_id], references: [barang_id], onDelete: NoAction, onUpdate: NoAction, map: "transaksi_detail_ibfk_2")
+
+  @@index([barang_id], map: "barang_id")
+  @@index([transaksi_id, barang_id], map: "idx_detail_transaksi")
+}
+
+
+model users {
+  user_id                                                 Int                  @id @default(autoincrement())
+  username                                                String?              @unique(map: "username") @db.VarChar(50)
+  password_hash                                           String?              @db.VarChar(255)
+  role                                                    users_role
+  created_at                                              DateTime             @default(now()) @db.Timestamp(0)
+  pembayaran_hutang                                       pembayaran_hutang[]
+  serah_terima_kasir_serah_terima_kasir_kasir_fromTousers serah_terima_kasir[] @relation("serah_terima_kasir_kasir_fromTousers")
+  serah_terima_kasir_serah_terima_kasir_kasir_toTousers   serah_terima_kasir[] @relation("serah_terima_kasir_kasir_toTousers")
+  transaksi                                               transaksi[]
+  anggota                                                 anggota?
+  setoran_kasir                                           setoran_kasir[]
+  tarik_tunai                                             tarik_tunai[]
+  topup_request                                           topup_request[]
+}
+
+model setoran_kasir {
+  setoran_id Int                  @id @default(autoincrement())
+  kasir_id   Int?
+  nominal    Decimal?             @db.Decimal(15, 2)
+  status     setoran_kasir_status? @default(pending)
+  created_at DateTime             @default(now()) @db.Timestamp(0)
+  users      users?               @relation(fields: [kasir_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "setoran_kasir_ibfk_1")
+
+  @@index([kasir_id], map: "kasir_id")
+}
+
+model tarik_tunai {
+  tarik_id   Int      @id @default(autoincrement())
+  kasir_id   Int?
+  anggota_id Int?
+  nominal    Decimal? @db.Decimal(15, 2)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  users      users?   @relation(fields: [kasir_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "tarik_tunai_ibfk_1")
+  anggota    anggota? @relation(fields: [anggota_id], references: [anggota_id], onDelete: NoAction, onUpdate: NoAction, map: "tarik_tunai_ibfk_2")
+
+  @@index([kasir_id], map: "kasir_id")
+  @@index([anggota_id], map: "anggota_id")
+}
+
+enum users_role {
+  admin
+  kasir
+  anggota
+}
+
+enum serah_terima_kasir_status {
+  pending
+  approved
+  rejected
+}
+
+enum pembayaran_hutang_status {
+  pending
+  approved
+  rejected
+}
+
+enum setoran_kasir_status {
+  pending
+  approved
+  rejected
+}
+
+enum transaksi_metode_pembayaran {
+  cash
+  qr
+  ewallet
+  transfer
+  hutang
+}
+
+enum transaksi_status {
+  pending
+  on_process
+  selesai
+  batal
+}
+
+
+model stok_opname {
+  opname_id   Int                  @id @default(autoincrement())
+  kasir_id    Int?
+  status      stok_opname_status?  @default(completed)
+  created_at  DateTime             @default(now()) @db.Timestamp(0)
+  details     stok_opname_detail[]
+
+  @@index([kasir_id], map: "kasir_id")
+}
+
+model stok_opname_detail {
+  detail_id   Int          @id @default(autoincrement())
+  opname_id   Int?
+  barang_id   Int?
+  stok_sistem Int?
+  stok_fisik  Int?
+  selisih     Int?
+  opname      stok_opname? @relation(fields: [opname_id], references: [opname_id], onDelete: Cascade, onUpdate: NoAction, map: "stok_opname_detail_ibfk_1")
+
+  @@index([opname_id], map: "opname_id")
+  @@index([barang_id], map: "barang_id")
+}
+
+
+enum stok_opname_status {
+  pending
+  completed
+}
+
+model topup_request {
+  topup_id    Int                   @id @default(autoincrement())
+  anggota_id  Int?
+  kasir_id    Int?
+  nominal     Decimal?              @db.Decimal(15, 2)
+  status      topup_request_status? @default(pending)
+  approved_at DateTime?             @db.Timestamp(0)
+  created_at  DateTime              @default(now()) @db.Timestamp(0)
+  anggota     anggota?              @relation(fields: [anggota_id], references: [anggota_id], onDelete: NoAction, onUpdate: NoAction, map: "topup_request_ibfk_1")
+  users       users?                @relation(fields: [kasir_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "topup_request_ibfk_2")
+
+  @@index([anggota_id], map: "anggota_id")
+  @@index([kasir_id], map: "kasir_id")
+}
+
+enum topup_request_status {
+  pending
+  approved
+  rejected
+}
+
+model pengumuman {
+  id         Int      @id @default(autoincrement())
+  judul      String   @db.VarChar(200)
+  konten     String   @db.Text
+  kategori   String   @default("info") @db.VarChar(50)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+}
